@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Settings, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,18 +24,31 @@ import { ArchiveProjectDialog } from "./components/ArchiveProjectDialog";
 import { TaskDialog } from "./components/TaskDialog";
 import { ProjectTeamView } from "./components/ProjectTeamView";
 import { EmptyState } from "./components/EmptyState";
-import type { Project, Task, TaskStatus } from "./types";
-import { INITIAL_PROJECTS, MOCK_INTERNAL_USERS, CURRENT_USER_ID } from "./mock-data";
+import type { Project, Task, TaskStatus, InternalUser } from "./types";
+import {
+  getCurrentUserId,
+  getProjectsWithDetails,
+  getProfiles,
+  ensureProfile,
+  createProject as createProjectAction,
+  updateProject as updateProjectAction,
+  archiveProject as archiveProjectAction,
+  createTask as createTaskAction,
+  updateTask as updateTaskAction,
+  updateTaskStatus as updateTaskStatusAction,
+  deleteTask as deleteTaskAction,
+} from "./actions";
 import { getEffectiveStatus, formatDate } from "./utils/task-utils";
 import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
 
 function getAssigneeName(
+  profiles: InternalUser[],
   projects: Project[],
   assigneeId: string,
   company: string
 ): string {
-  const internal = MOCK_INTERNAL_USERS.find((u) => u.id === assigneeId);
+  const internal = profiles.find((u) => u.id === assigneeId);
   if (internal) return `${internal.firstName} ${internal.lastName}`;
   for (const p of projects) {
     const ext = p.externalStakeholders.find((e) => e.id === assigneeId);
@@ -44,21 +57,28 @@ function getAssigneeName(
   return company || assigneeId;
 }
 
-function formatTasksForClipboard(tasks: Task[], getAssigneeName: (id: string, company: string) => string): string {
+function formatTasksForClipboard(
+  tasks: Task[],
+  getAssigneeNameFn: (id: string, company: string) => string
+): string {
   return tasks
     .map(
       (t, i) =>
-        `${i + 1}. ${t.title}${t.description ? `\n   ${t.description}` : ""}\n   Start: ${formatDate(t.startDate)}\n   Due: ${formatDate(t.currentDueDate)}\n   Assigned To: ${getAssigneeName(t.assignedTo, t.company)}`
+        `${i + 1}. ${t.title}${t.description ? `\n   ${t.description}` : ""}\n   Start: ${formatDate(t.startDate)}\n   Due: ${formatDate(t.currentDueDate)}\n   Assigned To: ${getAssigneeNameFn(t.assignedTo, t.company)}`
     )
     .join("\n\n");
 }
 
 export default function ORATPage() {
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>("proj-1");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [profiles, setProfiles] = useState<InternalUser[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>("all-projects");
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"board" | "list" | "timeline">("board");
   const [ownershipFilter, setOwnershipFilter] = useState<"all" | "my-tasks">("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [editProjectOpen, setEditProjectOpen] = useState(false);
@@ -69,8 +89,34 @@ export default function ORATPage() {
   const [taskDialogTask, setTaskDialogTask] = useState<Task | null>(null);
   const [taskDialogMode, setTaskDialogMode] = useState<"create" | "edit">("create");
 
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const [userIdRes, projectsRes, profilesRes] = await Promise.all([
+      getCurrentUserId(),
+      getProjectsWithDetails(),
+      getProfiles(),
+    ]);
+    if (userIdRes) setCurrentUserId(userIdRes);
+    if ("error" in projectsRes) setError(projectsRes.error);
+    else setProjects(projectsRes.data);
+    if ("data" in profilesRes) setProfiles(profilesRes.data);
+    if (userIdRes && "data" in profilesRes) {
+      const hasProfile = profilesRes.data.some((p) => p.id === userIdRes);
+      if (!hasProfile) await ensureProfile(userIdRes);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   const currentProject = useMemo(
-    () => (currentProjectId && currentProjectId !== "all-projects" ? projects.find((p) => p.id === currentProjectId) ?? null : null),
+    () =>
+      currentProjectId && currentProjectId !== "all-projects"
+        ? projects.find((p) => p.id === currentProjectId) ?? null
+        : null,
     [projects, currentProjectId]
   );
 
@@ -81,17 +127,21 @@ export default function ORATPage() {
         .filter((p) => !p.archived)
         .flatMap((p) => p.tasks.map((t) => ({ ...t, projectId: p.id, projectName: p.name })));
     } else if (currentProject) {
-      list = currentProject.tasks.map((t) => ({ ...t, projectId: currentProject.id, projectName: currentProject.name }));
+      list = currentProject.tasks.map((t) => ({
+        ...t,
+        projectId: currentProject.id,
+        projectName: currentProject.name,
+      }));
     }
-    if (ownershipFilter === "my-tasks") {
-      list = list.filter((t) => t.assignedTo === CURRENT_USER_ID);
+    if (ownershipFilter === "my-tasks" && currentUserId) {
+      list = list.filter((t) => t.assignedTo === currentUserId);
     }
     return list;
-  }, [projects, currentProjectId, currentProject, ownershipFilter]);
+  }, [projects, currentProjectId, currentProject, ownershipFilter, currentUserId]);
 
   const getAssigneeNameForProject = useCallback(
-    (id: string, company: string) => getAssigneeName(projects, id, company),
-    [projects]
+    (id: string, company: string) => getAssigneeName(profiles, projects, id, company),
+    [profiles, projects]
   );
 
   const metrics = useMemo(() => {
@@ -117,86 +167,122 @@ export default function ORATPage() {
     });
   }, []);
 
-  const handleCreateProject = useCallback((data: Omit<Project, "id" | "createdDate" | "tasks">) => {
-    const id = `proj-${Date.now()}`;
-    const createdDate = new Date().toISOString().slice(0, 10);
-    const externalStakeholders = (data.externalStakeholders ?? []).map((e, i) => ({
-      ...e,
-      id: `ex-${id}-${i}`,
-      projectId: id,
-    }));
-    setProjects((prev) => [...prev, { ...data, id, createdDate, tasks: [], externalStakeholders }]);
-    setCurrentProjectId(id);
-    toast.success("Project created");
-  }, []);
+  const handleCreateProject = useCallback(
+    async (data: Omit<Project, "id" | "createdDate" | "tasks">) => {
+      const res = await createProjectAction(data);
+      if ("error" in res) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Project created");
+      await fetchData();
+      setCurrentProjectId(res.data.id);
+      setCreateProjectOpen(false);
+    },
+    [fetchData]
+  );
 
-  const handleSaveProject = useCallback((project: Project) => {
-    setProjects((prev) => prev.map((p) => (p.id === project.id ? project : p)));
-    setEditProject(null);
-    setEditProjectOpen(false);
-    toast.success("Project updated");
-  }, []);
+  const handleSaveProject = useCallback(
+    async (project: Project) => {
+      const res = await updateProjectAction(project);
+      if ("error" in res) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Project updated");
+      await fetchData();
+      setEditProject(null);
+      setEditProjectOpen(false);
+    },
+    [fetchData]
+  );
 
-  const handleArchiveProject = useCallback(() => {
+  const handleArchiveProject = useCallback(async () => {
     if (!archiveProject) return;
-    setProjects((prev) => prev.map((p) => (p.id === archiveProject.id ? { ...p, archived: true } : p)));
+    const res = await archiveProjectAction(archiveProject.id);
+    if ("error" in res) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success("Project archived");
     setCurrentProjectId("all-projects");
     setArchiveProject(null);
     setArchiveDialogOpen(false);
-    toast.success("Project archived");
-  }, [archiveProject]);
+    await fetchData();
+  }, [archiveProject, fetchData]);
 
-  const handleTaskStatusChange = useCallback((taskId: string, newStatus: TaskStatus) => {
-    setProjects((prev) =>
-      prev.map((p) => ({
-        ...p,
-        tasks: p.tasks.map((t) =>
-          t.id === taskId ? { ...t, status: newStatus, history: [...t.history, { date: new Date().toISOString().slice(0, 10), action: `Status changed to ${newStatus}`, user: "Current User" }] } : t
-        ),
-      }))
-    );
-    toast.success("Task updated");
-  }, []);
-
-  const handleSaveTask = useCallback((task: Task) => {
-    setProjects((prev) =>
-      prev.map((p) => (p.id === task.projectId ? { ...p, tasks: p.tasks.map((t) => (t.id === task.id ? task : t)) } : p))
-    );
-    setTaskDialogTask(null);
-    setTaskDialogOpen(false);
-    toast.success("Task updated");
-  }, []);
-
-  const handleCreateTask = useCallback(
-    (data: Omit<Task, "id" | "history"> & { history: Task["history"] }) => {
-      if (!currentProject) return;
-      const id = `task-${Date.now()}`;
-      const task: Task = { ...data, id, history: data.history };
-      setProjects((prev) =>
-        prev.map((p) => (p.id === currentProject.id ? { ...p, tasks: [...p.tasks, task] } : p))
-      );
-      setTaskDialogOpen(false);
-      toast.success("Task created");
+  const handleTaskStatusChange = useCallback(
+    async (taskId: string, newStatus: TaskStatus) => {
+      const historyEntry = {
+        date: new Date().toISOString().slice(0, 10),
+        action: `Status changed to ${newStatus}`,
+        user: "Current User",
+      };
+      const res = await updateTaskStatusAction(taskId, newStatus, historyEntry);
+      if ("error" in res) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Task updated");
+      await fetchData();
     },
-    [currentProject]
+    [fetchData]
   );
 
-  const handleDeleteTask = useCallback((taskId: string) => {
-    setProjects((prev) =>
-      prev.map((p) => ({ ...p, tasks: p.tasks.filter((t) => t.id !== taskId) }))
-    );
-    setSelectedTaskIds((prev) => {
-      const next = new Set(prev);
-      next.delete(taskId);
-      return next;
-    });
-    toast.success("Task deleted");
-  }, []);
+  const handleSaveTask = useCallback(
+    async (task: Task) => {
+      const res = await updateTaskAction(task);
+      if ("error" in res) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Task updated");
+      setTaskDialogTask(null);
+      setTaskDialogOpen(false);
+      await fetchData();
+    },
+    [fetchData]
+  );
+
+  const handleCreateTask = useCallback(
+    async (data: Omit<Task, "id" | "history"> & { history: Task["history"] }) => {
+      if (!currentProject) return;
+      const res = await createTaskAction(currentProject.id, { ...data, history: data.history ?? [] });
+      if ("error" in res) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Task created");
+      setTaskDialogOpen(false);
+      await fetchData();
+    },
+    [currentProject, fetchData]
+  );
+
+  const handleDeleteTask = useCallback(
+    async (taskId: string) => {
+      const res = await deleteTaskAction(taskId);
+      if ("error" in res) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Task deleted");
+      setSelectedTaskIds((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+      await fetchData();
+    },
+    [fetchData]
+  );
 
   const handleCopyToClipboard = useCallback(() => {
     const selected = displayTasks.filter((t) => selectedTaskIds.has(t.id));
     if (selected.length === 0) return;
-    const text = formatTasksForClipboard(selected, (id, company) => getAssigneeNameForProject(id, company));
+    const text = formatTasksForClipboard(selected, (id, company) =>
+      getAssigneeNameForProject(id, company)
+    );
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(text).then(
         () => toast.success("Tasks copied to clipboard"),
@@ -232,6 +318,25 @@ export default function ORATPage() {
   };
 
   const isAllProjects = currentProjectId === "all-projects";
+
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-8">
+        <p className="text-slate-500 dark:text-slate-400">Loading…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
+        <p className="text-red-600 dark:text-red-400">{error}</p>
+        <Button variant="outline" onClick={fetchData}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -275,11 +380,20 @@ export default function ORATPage() {
           </div>
           <div className="flex items-center gap-2">
             <Link href="/">
-              <Button variant="outline" size="sm">Home</Button>
+              <Button variant="outline" size="sm">
+                Home
+              </Button>
             </Link>
             <SignOutButton />
             {!isAllProjects && currentProject && (
-              <Button size="sm" onClick={() => { setTaskDialogTask(null); setTaskDialogMode("create"); setTaskDialogOpen(true); }}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setTaskDialogTask(null);
+                  setTaskDialogMode("create");
+                  setTaskDialogOpen(true);
+                }}
+              >
                 <Plus className="h-4 w-4" />
                 Create Task
               </Button>
@@ -292,7 +406,7 @@ export default function ORATPage() {
             <div className="mb-6">
               <ProjectTeamView
                 project={currentProject}
-                internalUsers={MOCK_INTERNAL_USERS}
+                internalUsers={profiles}
                 onEditProject={() => openEditProject(currentProject)}
               />
             </div>
@@ -323,7 +437,11 @@ export default function ORATPage() {
               tasks={displayTasks}
               selectedTaskIds={selectedTaskIds}
               onToggleSelect={toggleTaskSelect}
-              onTaskClick={(task) => { setTaskDialogTask(task); setTaskDialogMode("edit"); setTaskDialogOpen(true); }}
+              onTaskClick={(task) => {
+                setTaskDialogTask(task);
+                setTaskDialogMode("edit");
+                setTaskDialogOpen(true);
+              }}
               onStatusChange={handleTaskStatusChange}
               getAssigneeName={getAssigneeNameForProject}
             />
@@ -332,7 +450,11 @@ export default function ORATPage() {
               tasks={displayTasks}
               selectedTaskIds={selectedTaskIds}
               onToggleSelect={toggleTaskSelect}
-              onTaskClick={(task) => { setTaskDialogTask(task); setTaskDialogMode("edit"); setTaskDialogOpen(true); }}
+              onTaskClick={(task) => {
+                setTaskDialogTask(task);
+                setTaskDialogMode("edit");
+                setTaskDialogOpen(true);
+              }}
               getAssigneeName={getAssigneeNameForProject}
               showProjectColumn={isAllProjects}
             />
@@ -355,14 +477,14 @@ export default function ORATPage() {
       <CreateProjectDialog
         open={createProjectOpen}
         onOpenChange={setCreateProjectOpen}
-        internalUsers={MOCK_INTERNAL_USERS}
+        internalUsers={profiles}
         onCreate={handleCreateProject}
       />
       <EditProjectDialog
         open={editProjectOpen}
         onOpenChange={setEditProjectOpen}
         project={editProject}
-        internalUsers={MOCK_INTERNAL_USERS}
+        internalUsers={profiles}
         onSave={handleSaveProject}
       />
       <ArchiveProjectDialog
@@ -376,7 +498,7 @@ export default function ORATPage() {
         onOpenChange={setTaskDialogOpen}
         task={taskDialogTask}
         project={currentProject}
-        internalUsers={MOCK_INTERNAL_USERS}
+        internalUsers={profiles}
         mode={taskDialogMode}
         onSave={handleSaveTask}
         onCreate={handleCreateTask}

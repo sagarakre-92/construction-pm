@@ -52,9 +52,9 @@ Open [http://localhost:3000](http://localhost:3000).
 
 1. Create a project at [supabase.com](https://supabase.com).
 2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to `.env.local`.
-3. Run the migration to create the `tasks` table and RLS:
-
-   In the Supabase SQL editor, run the contents of `supabase/migrations/001_create_tasks.sql`.
+3. Run the migrations in the Supabase SQL editor (in order):
+   - `supabase/migrations/001_create_tasks.sql` (legacy tasks table)
+   - `supabase/migrations/002_orat_schema.sql` (ORAT: profiles, projects, tasks, members, external stakeholders)
 
 4. Enable Email auth (or your preferred provider) in Authentication → Providers.
 
