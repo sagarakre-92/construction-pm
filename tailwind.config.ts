@@ -1,5 +1,9 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * Theme aligned with Figma for design–dev consistency.
+ * See docs/FIGMA.md for workflow and how to update when Figma styles change.
+ */
 const config: Config = {
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",

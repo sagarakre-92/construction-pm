@@ -28,7 +28,26 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const pathname = request.nextUrl.pathname;
+
+  // Redirect old dashboard/tasks routes to ORAT
+  if (pathname === "/dashboard" || pathname === "/tasks" || pathname.startsWith("/dashboard/") || pathname.startsWith("/tasks/")) {
+    return NextResponse.redirect(new URL("/orat", request.url));
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Require auth for ORAT: redirect unauthenticated users to login
+  const isAuthRoute =
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname.startsWith("/signup/") ||
+    pathname === "/auth/callback";
+  if (pathname.startsWith("/orat") && !user && !isAuthRoute) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
 
   return supabaseResponse;
 }

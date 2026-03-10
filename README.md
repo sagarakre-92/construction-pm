@@ -13,6 +13,10 @@ A production-oriented Next.js app for construction project management, with Type
 - **Playwright** (E2E tests)
 - **GitHub Actions** (CI)
 
+## Design (Figma)
+
+Designs live in Figma. See **[docs/FIGMA.md](./docs/FIGMA.md)** for the design file link, design–dev workflow, and how tokens (colors, typography) stay in sync with the codebase.
+
 ## Connecting GitHub, Vercel, Supabase & Sentry
 
 **Already have accounts?** Use **[CONNECT.md](./CONNECT.md)** — it only covers connecting this project to each service and what to copy where.

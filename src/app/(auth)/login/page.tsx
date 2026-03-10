@@ -43,7 +43,7 @@ function LoginForm() {
         return;
       }
       // Full page redirect so the next request sends auth cookies to the server
-      window.location.href = "/dashboard";
+      window.location.href = "/orat";
       return;
     } catch (err) {
       const message =
