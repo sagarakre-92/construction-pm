@@ -155,27 +155,29 @@ export async function createProject(
   const userId = session?.user?.id;
   if (!userId) return { error: "Not authenticated" };
 
-  const { data: proj, error: projErr } = await supabase
-    .from("orat_projects")
-    .insert({
-      name: data.name,
-      description: data.description ?? null,
-      created_date: new Date().toISOString().slice(0, 10),
-      archived: false,
-      owner_id: userId,
-    })
-    .select("id, name, description, created_date, archived")
-    .single();
+  // Use RPC so project + owner membership are created with definer rights (avoids RLS on insert)
+  const { data: projectId, error: rpcErr } = await supabase.rpc("orat_create_project", {
+    p_name: data.name,
+    p_description: data.description ?? null,
+  });
 
-  if (projErr || !proj) return { error: projErr?.message ?? "Failed to create project" };
-
-  const projectId = proj.id;
+  if (rpcErr || !projectId) return { error: rpcErr?.message ?? "Failed to create project" };
 
   const memberIds = [...new Set([...(data.internalTeamMembers ?? []), userId])];
-  const { error: membersErr } = await supabase.from("orat_project_members").insert(
-    memberIds.map((user_id) => ({ project_id: projectId, user_id }))
-  );
-  if (membersErr) return { error: membersErr.message };
+  if (memberIds.length > 1) {
+    const { error: membersErr } = await supabase.from("orat_project_members").insert(
+      memberIds.filter((id) => id !== userId).map((user_id) => ({ project_id: projectId, user_id }))
+    );
+    if (membersErr) return { error: membersErr.message };
+  }
+
+  const proj = {
+    id: projectId,
+    name: data.name,
+    description: data.description ?? undefined,
+    created_date: new Date().toISOString().slice(0, 10),
+    archived: false,
+  };
 
   const externals = data.externalStakeholders ?? [];
   if (externals.length > 0) {

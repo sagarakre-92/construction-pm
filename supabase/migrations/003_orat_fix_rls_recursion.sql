@@ -32,6 +32,17 @@ create policy "Users can view projects they own or are member of"
   on public.orat_projects for select
   using (public.orat_can_access_project(id, auth.uid()));
 
+-- INSERT and DELETE must allow owner: not covered by orat_can_access_project (no row yet)
+drop policy if exists "Authenticated users can create projects" on public.orat_projects;
+create policy "Authenticated users can create projects"
+  on public.orat_projects for insert
+  with check (auth.uid() = owner_id);
+
+drop policy if exists "Project owner can delete project" on public.orat_projects;
+create policy "Project owner can delete project"
+  on public.orat_projects for delete
+  using (owner_id = auth.uid());
+
 create policy "Project owner or member can update project"
   on public.orat_projects for update
   using (public.orat_can_access_project(id, auth.uid()));
