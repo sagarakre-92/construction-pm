@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SignOutButton } from "@/components/SignOutButton";
 
 export default function DashboardLayout({
   children,
@@ -28,7 +29,7 @@ export default function DashboardLayout({
             >
               Tasks
             </Link>
-            {/* TODO: Add sign out when Supabase auth is wired */}
+            <SignOutButton />
           </nav>
         </div>
       </header>

@@ -9,8 +9,9 @@ export async function getTasks(): Promise<
   try {
     const supabase = await createClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) {
       return { data: null, error: "Not authenticated" };
     }
@@ -33,8 +34,9 @@ export async function createTask(formData: FormData): Promise<{
   try {
     const supabase = await createClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) {
       return { error: "Not authenticated" };
     }
@@ -60,8 +62,9 @@ export async function deleteTask(taskId: string): Promise<{ error: string | null
   try {
     const supabase = await createClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) {
       return { error: "Not authenticated" };
     }
