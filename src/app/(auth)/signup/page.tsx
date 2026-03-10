@@ -15,16 +15,21 @@ export default function SignUpPage() {
     setError(null);
     try {
       const supabase = createClient();
+      const callbackUrl =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/auth/callback`
+          : undefined;
       const { error: signUpError } = await supabase.auth.signUp({
         email,
         password,
+        options: callbackUrl ? { emailRedirectTo: callbackUrl } : undefined,
       });
       if (signUpError) {
         setError(signUpError.message);
         return;
       }
-      // Full page redirect so the next request sends auth cookies to the server
-      window.location.href = "/dashboard";
+      // Show "please verify your email" page (confirmation email was sent)
+      window.location.href = "/signup/verify-email";
       return;
     } catch {
       setError("Something went wrong. Please try again.");

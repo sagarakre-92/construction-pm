@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -9,11 +10,29 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [verifiedMessage, setVerifiedMessage] = useState(false);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const err = searchParams.get("error");
+    const verified = searchParams.get("verified");
+    if (err === "auth_callback_failed") {
+      setError("Email confirmation failed or link expired. Please try again or sign in.");
+      setVerifiedMessage(false);
+    } else if (verified === "1") {
+      setError(null);
+      setVerifiedMessage(true);
+    }
+  }, [searchParams]);
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        setError("Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to your deployment.");
+        return;
+      }
       const supabase = createClient();
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
@@ -26,8 +45,10 @@ export default function LoginPage() {
       // Full page redirect so the next request sends auth cookies to the server
       window.location.href = "/dashboard";
       return;
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -39,6 +60,14 @@ export default function LoginPage() {
         Log in
       </h1>
       <form onSubmit={handleSubmit} className="space-y-4">
+        {verifiedMessage && (
+          <div
+            className="rounded-lg bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 px-4 py-3 text-sm"
+            role="status"
+          >
+            Email verified. You can now log in.
+          </div>
+        )}
         {error && (
           <div
             className="rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 px-4 py-3 text-sm"
