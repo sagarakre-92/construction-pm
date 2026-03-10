@@ -172,9 +172,10 @@ export async function createProject(
   const projectId = proj.id;
 
   const memberIds = [...new Set([...(data.internalTeamMembers ?? []), userId])];
-  await supabase.from("orat_project_members").insert(
+  const { error: membersErr } = await supabase.from("orat_project_members").insert(
     memberIds.map((user_id) => ({ project_id: projectId, user_id }))
   );
+  if (membersErr) return { error: membersErr.message };
 
   const externals = data.externalStakeholders ?? [];
   if (externals.length > 0) {

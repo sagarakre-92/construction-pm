@@ -80,9 +80,7 @@ export function CreateProjectDialog({
     setExternals((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const valid =
-    name.trim().length > 0 &&
-    (selectedInternalIds.size > 0 || externals.some((e) => e.firstName && e.lastName && e.role && e.company));
+  const valid = name.trim().length > 0;
 
   const validExternals = externals.filter(
     (e) => e.firstName.trim() && e.lastName.trim() && e.role.trim() && e.company.trim()
