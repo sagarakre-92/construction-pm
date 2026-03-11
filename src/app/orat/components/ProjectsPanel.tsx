@@ -40,8 +40,8 @@ export function ProjectsPanel({
       <aside
         className={cn(
           "flex w-[280px] shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800",
-          "fixed inset-y-0 left-0 z-50 transform transition-transform lg:static lg:translate-x-0",
-          onMobileClose && !mobileOpen && "-translate-x-full"
+          "fixed inset-y-0 left-0 z-50 transform transition-transform lg:static lg:translate-x-0 lg:pointer-events-auto",
+          onMobileClose && !mobileOpen && "-translate-x-full pointer-events-none"
         )}
       >
         <div className="flex flex-col gap-4 p-4">

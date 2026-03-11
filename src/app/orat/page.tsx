@@ -8,6 +8,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -39,8 +40,7 @@ import {
   deleteTask as deleteTaskAction,
 } from "./actions";
 import { getEffectiveStatus, formatDate } from "./utils/task-utils";
-import Link from "next/link";
-import { SignOutButton } from "@/components/SignOutButton";
+import { createClient } from "@/lib/supabase/client";
 
 function getAssigneeName(
   profiles: InternalUser[],
@@ -360,7 +360,7 @@ export default function ORATPage() {
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
       />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800 sm:px-6 sm:py-4">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
             <Button
@@ -381,32 +381,37 @@ export default function ORATPage() {
                 <p className="truncate text-sm text-slate-500 dark:text-slate-400">{currentProject.description}</p>
               )}
             </div>
-            {!isAllProjects && currentProject && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" className="shrink-0">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" className="shrink-0" aria-label="Settings">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {!isAllProjects && currentProject && (
+                <>
                   <DropdownMenuItem onClick={() => openEditProject(currentProject)}>
                     Edit Project Details
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openArchiveConfirm(currentProject)} className="text-red-600">
                     Archive Project
                   </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Link href="/">
-              <Button variant="outline" size="sm" className="text-xs sm:text-sm">
-                Home
-              </Button>
-            </Link>
-            <SignOutButton />
-          </div>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem
+                onSelect={async (e) => {
+                  e.preventDefault();
+                  const supabase = createClient();
+                  await supabase.auth.signOut();
+                  window.location.href = "/";
+                }}
+              >
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">

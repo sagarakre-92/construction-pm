@@ -74,7 +74,9 @@ export function TaskDialog({
 
   const options = getAssigneeOptions(project, internalUsers);
 
+  // Sync form only when dialog opens or task/mode changes. Intentionally omit project/internalUsers so we don't re-run on parent re-render and reset the form while the user is typing.
   useEffect(() => {
+    if (!open) return;
     if (task) {
       setTitle(task.title);
       setDescription(task.description ?? "");
@@ -86,16 +88,19 @@ export function TaskDialog({
       setMeetingReference(task.meetingReference ?? "");
     } else if (mode === "create") {
       const today = new Date().toISOString().slice(0, 10);
+      const assigneeOptions = getAssigneeOptions(project, internalUsers);
+      const first = assigneeOptions[0];
       setTitle("");
       setDescription("");
-      setAssignedTo(options[0]?.id ?? "");
-      setCompany(options[0]?.company ?? "");
+      setAssignedTo(first?.id ?? "");
+      setCompany(first?.company ?? "");
       setStartDate(today);
       setDueDate(today);
       setStatus("Not Started");
       setMeetingReference("");
     }
-  }, [task, mode, open, options]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync when open/task/mode change; including project/internalUsers would reset form on every keystroke
+  }, [open, task, mode]);
 
   useEffect(() => {
     const opt = options.find((o) => o.id === assignedTo);
