@@ -72,7 +72,7 @@ export async function getProjectsWithDetails(): Promise<ActionResult<Project[]>>
 
   const { data: projects, error: projErr } = await supabase
     .from("orat_projects")
-    .select("id, name, description, created_date, archived")
+    .select("id, name, description, created_date, archived, organization_id")
     .order("created_date", { ascending: false });
 
   if (projErr) return { error: projErr.message };
@@ -137,6 +137,7 @@ export async function getProjectsWithDetails(): Promise<ActionResult<Project[]>>
     description: p.description ?? undefined,
     createdDate: dateOnly(p.created_date),
     archived: p.archived ?? false,
+    organizationId: p.organization_id ?? "",
     internalTeamMembers: membersByProject.get(p.id) ?? [],
     externalStakeholders: externalsByProject.get(p.id) ?? [],
     tasks: tasksByProject.get(p.id) ?? [],
@@ -146,7 +147,7 @@ export async function getProjectsWithDetails(): Promise<ActionResult<Project[]>>
 }
 
 export async function createProject(
-  data: Omit<Project, "id" | "createdDate" | "tasks">
+  data: Omit<Project, "id" | "createdDate" | "tasks" | "organizationId">
 ): Promise<ActionResult<Project>> {
   const supabase = await createClient();
   const {
@@ -205,6 +206,12 @@ export async function createProject(
     projectId: e.project_id,
   }));
 
+  const { data: projRow } = await supabase
+    .from("orat_projects")
+    .select("organization_id")
+    .eq("id", projectId)
+    .single();
+
   return {
     data: {
       id: proj.id,
@@ -212,6 +219,7 @@ export async function createProject(
       description: proj.description ?? undefined,
       createdDate: dateOnly(proj.created_date),
       archived: proj.archived ?? false,
+      organizationId: projRow?.organization_id ?? "",
       internalTeamMembers: memberIds,
       externalStakeholders,
       tasks: [],

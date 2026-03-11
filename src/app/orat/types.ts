@@ -44,6 +44,7 @@ export type Project = {
   description?: string;
   createdDate: string;
   archived?: boolean;
+  organizationId: string;
   internalTeamMembers: string[];
   externalStakeholders: ExternalStakeholder[];
   tasks: Task[];
