@@ -19,6 +19,8 @@ The app is being made **organization-aware** while still behaving like a single-
 
 - **Migration `008_projects_require_organization.sql`** (Step 4): Adds existing project owners to the default org; backfills all projects to that org; makes `orat_projects.organization_id` NOT NULL with FK ON DELETE RESTRICT; updates `orat_create_project` so new projects get `organization_id` from the current user’s org. **Requires 007 to have been run first.**
 
+- **Step 5 (code):** Project queries are organization-scoped. `getCurrentOrganization()` returns the current user’s org; `getProjectsForOrganization(organizationId)` fetches projects for that org; `getProjectsWithDetails()` uses the current org and returns only that org’s projects. UI unchanged; data access is org-aware.
+
 No UI changes for org selection; project creation still uses the same dialog; the server sets `organization_id` from the user’s membership.
 
 ---

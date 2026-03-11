@@ -7,6 +7,7 @@ import type {
   InternalUser,
   ExternalStakeholder,
   TaskStatus,
+  Organization,
 } from "./types";
 
 type ActionResult<T> = { data: T } | { error: string };
@@ -21,6 +22,35 @@ export async function getCurrentUserId(): Promise<string | null> {
     data: { session },
   } = await supabase.auth.getSession();
   return session?.user?.id ?? null;
+}
+
+/** Returns the current user's organization (single-org model). Use for org-scoped data access. */
+export async function getCurrentOrganization(): Promise<ActionResult<Organization | null>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { data: orgId, error: rpcErr } = await supabase.rpc("orat_user_organization_id");
+  if (rpcErr) return { error: rpcErr.message };
+  if (!orgId) return { data: null };
+
+  const { data: row, error } = await supabase
+    .from("organizations")
+    .select("id, name, slug")
+    .eq("id", orgId)
+    .single();
+  if (error) return { error: error.message };
+  if (!row) return { data: null };
+
+  return {
+    data: {
+      id: row.id,
+      name: row.name ?? "",
+      slug: row.slug ?? "",
+    },
+  };
 }
 
 export async function ensureProfile(userId: string): Promise<ActionResult<null>> {
@@ -63,7 +93,10 @@ export async function getProfiles(): Promise<ActionResult<InternalUser[]>> {
   return { data: list };
 }
 
-export async function getProjectsWithDetails(): Promise<ActionResult<Project[]>> {
+/** Fetches projects with details for a given organization. Used by getProjectsWithDetails. */
+export async function getProjectsForOrganization(
+  organizationId: string
+): Promise<ActionResult<Project[]>> {
   const supabase = await createClient();
   const {
     data: { session },
@@ -73,6 +106,7 @@ export async function getProjectsWithDetails(): Promise<ActionResult<Project[]>>
   const { data: projects, error: projErr } = await supabase
     .from("orat_projects")
     .select("id, name, description, created_date, archived, organization_id")
+    .eq("organization_id", organizationId)
     .order("created_date", { ascending: false });
 
   if (projErr) return { error: projErr.message };
@@ -144,6 +178,14 @@ export async function getProjectsWithDetails(): Promise<ActionResult<Project[]>>
   }));
 
   return { data: result };
+}
+
+/** Fetches projects for the current user's organization (single default org). Keeps UI behavior unchanged. */
+export async function getProjectsWithDetails(): Promise<ActionResult<Project[]>> {
+  const orgRes = await getCurrentOrganization();
+  if ("error" in orgRes) return orgRes;
+  if (!orgRes.data) return { data: [] };
+  return getProjectsForOrganization(orgRes.data.id);
 }
 
 export async function createProject(

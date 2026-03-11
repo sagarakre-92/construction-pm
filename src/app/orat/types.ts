@@ -1,5 +1,11 @@
 export type TaskStatus = "Not Started" | "In Progress" | "Complete" | "Overdue";
 
+export type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
 export type InternalUser = {
   id: string;
   firstName: string;
