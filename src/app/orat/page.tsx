@@ -210,7 +210,7 @@ export default function ORATPage() {
   }, []);
 
   const handleCreateProject = useCallback(
-    async (data: Omit<Project, "id" | "createdDate" | "tasks">) => {
+    async (data: Omit<Project, "id" | "createdDate" | "tasks" | "organizationId">) => {
       const res = await createProjectAction(data);
       if ("error" in res) {
         toast.error(res.error);

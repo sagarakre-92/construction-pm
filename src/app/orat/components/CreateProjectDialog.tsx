@@ -20,7 +20,7 @@ interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   internalUsers: InternalUser[];
-  onCreate: (project: Omit<Project, "id" | "createdDate" | "tasks">) => void;
+  onCreate: (project: Omit<Project, "id" | "createdDate" | "tasks" | "organizationId">) => void;
 }
 
 const emptyExternal = (projectId: string): ExternalStakeholder => ({
