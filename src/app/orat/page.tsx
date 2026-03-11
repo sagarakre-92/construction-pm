@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Settings, Plus } from "lucide-react";
+import { Settings, Plus, PanelLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,7 +13,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProjectsPanel } from "./components/ProjectsPanel";
 import { DashboardMetrics } from "./components/DashboardMetrics";
-import { TaskOwnershipFilter } from "./components/TaskOwnershipFilter";
+import { TaskFilterDropdown, type TaskFilterValue } from "./components/TaskFilterDropdown";
 import { KanbanView } from "./components/KanbanView";
 import { ListView } from "./components/ListView";
 import { GanttView } from "./components/GanttView";
@@ -76,7 +76,7 @@ export default function ORATPage() {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>("all-projects");
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"board" | "list" | "timeline">("board");
-  const [ownershipFilter, setOwnershipFilter] = useState<"all" | "my-tasks">("all");
+  const [taskFilter, setTaskFilter] = useState<TaskFilterValue>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +88,7 @@ export default function ORATPage() {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [taskDialogTask, setTaskDialogTask] = useState<Task | null>(null);
   const [taskDialogMode, setTaskDialogMode] = useState<"create" | "edit">("create");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -133,11 +134,19 @@ export default function ORATPage() {
         projectName: currentProject.name,
       }));
     }
-    if (ownershipFilter === "my-tasks" && currentUserId) {
+    if (taskFilter === "my-tasks" && currentUserId) {
       list = list.filter((t) => t.assignedTo === currentUserId);
+    } else if (taskFilter === "internal") {
+      const profileIds = new Set(profiles.map((p) => p.id));
+      list = list.filter((t) => profileIds.has(t.assignedTo));
+    } else if (taskFilter === "external") {
+      const externalIds = new Set(
+        projects.flatMap((p) => p.externalStakeholders.map((e) => e.id))
+      );
+      list = list.filter((t) => externalIds.has(t.assignedTo));
     }
     return list;
-  }, [projects, currentProjectId, currentProject, ownershipFilter, currentUserId]);
+  }, [projects, currentProjectId, currentProject, taskFilter, currentUserId, profiles]);
 
   const getAssigneeNameForProject = useCallback(
     (id: string, company: string) => getAssigneeName(profiles, projects, id, company),
@@ -348,22 +357,34 @@ export default function ORATPage() {
           setSelectedTaskIds(new Set());
         }}
         onCreateProject={() => setCreateProjectOpen(true)}
+        mobileOpen={sidebarOpen}
+        onMobileClose={() => setSidebarOpen(false)}
       />
-      <main className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-700 dark:bg-slate-800">
-          <div className="flex items-center gap-4">
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0 lg:hidden"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open projects menu"
+            >
+              <PanelLeft className="h-5 w-5" />
+            </Button>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold text-slate-900 dark:text-white sm:text-xl">
                 {isAllProjects ? "All Projects" : currentProject?.name ?? "—"}
               </h1>
               {!isAllProjects && currentProject?.description && (
-                <p className="text-sm text-slate-500 dark:text-slate-400">{currentProject.description}</p>
+                <p className="truncate text-sm text-slate-500 dark:text-slate-400">{currentProject.description}</p>
               )}
             </div>
             {!isAllProjects && currentProject && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost">
+                  <Button size="icon" variant="ghost" className="shrink-0">
                     <Settings className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -378,30 +399,17 @@ export default function ORATPage() {
               </DropdownMenu>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Link href="/">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="text-xs sm:text-sm">
                 Home
               </Button>
             </Link>
             <SignOutButton />
-            {!isAllProjects && currentProject && (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setTaskDialogTask(null);
-                  setTaskDialogMode("create");
-                  setTaskDialogOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Create Task
-              </Button>
-            )}
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {!isAllProjects && currentProject && (
             <div className="mb-6">
               <ProjectTeamView
@@ -412,13 +420,29 @@ export default function ORATPage() {
             </div>
           )}
 
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-            <TaskOwnershipFilter value={ownershipFilter} onChange={setOwnershipFilter} />
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <TaskFilterDropdown value={taskFilter} onChange={setTaskFilter} />
+              {!isAllProjects && currentProject && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setTaskDialogTask(null);
+                    setTaskDialogMode("create");
+                    setTaskDialogOpen(true);
+                  }}
+                  className="text-xs sm:text-sm"
+                >
+                  <Plus className="h-4 w-4 shrink-0" />
+                  <span className="hidden sm:inline">Create Task</span>
+                </Button>
+              )}
+            </div>
             <Tabs value={view} onValueChange={(v) => setView(v as "board" | "list" | "timeline")}>
-              <TabsList>
-                <TabsTrigger value="board">Board</TabsTrigger>
-                <TabsTrigger value="list">List</TabsTrigger>
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
+              <TabsList className="w-full grid grid-cols-3 sm:w-auto sm:inline-flex">
+                <TabsTrigger value="board" className="text-xs sm:text-sm">Board</TabsTrigger>
+                <TabsTrigger value="list" className="text-xs sm:text-sm">List</TabsTrigger>
+                <TabsTrigger value="timeline" className="text-xs sm:text-sm">Timeline</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -427,10 +451,21 @@ export default function ORATPage() {
             <DashboardMetrics {...metrics} />
           </div>
 
-          {ownershipFilter === "my-tasks" && displayTasks.length === 0 ? (
+          {displayTasks.length === 0 && (taskFilter === "my-tasks" || taskFilter === "internal" || taskFilter === "external") ? (
             <EmptyState
-              title="You have no assigned tasks in this project"
-              description="Switch to 'All Tasks' to see all tasks in this project, or create a new task."
+              title={
+                taskFilter === "my-tasks"
+                  ? "You have no assigned tasks in this view"
+                  : taskFilter === "internal"
+                    ? "No internal tasks in this view"
+                    : "No external tasks in this view"
+              }
+              description="Try a different filter or create a new task."
+            />
+          ) : displayTasks.length === 0 ? (
+            <EmptyState
+              title="No tasks yet"
+              description="Create a task to get started."
             />
           ) : view === "board" ? (
             <KanbanView

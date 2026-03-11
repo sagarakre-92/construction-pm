@@ -59,11 +59,11 @@ export function KanbanView({
   }));
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <div className="flex gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible md:pb-0">
       {tasksByColumn.map(({ status, title, tasks: columnTasks }) => (
         <div
           key={status}
-          className="flex flex-col rounded-lg border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/30"
+          className="flex min-w-[260px] flex-col shrink-0 rounded-lg border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/30 md:min-w-0"
           onDrop={(e) => handleDrop(e, status)}
           onDragOver={handleDragOver}
         >

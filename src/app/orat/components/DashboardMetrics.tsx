@@ -29,21 +29,21 @@ export function DashboardMetrics({
   const counts = { notStarted, inProgress, overdue, complete };
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:gap-4">
       <div
         className={cn(
-          "rounded-lg border bg-white p-4 dark:bg-slate-800",
+          "rounded-lg border bg-white p-3 dark:bg-slate-800 sm:p-4",
           "border-slate-200 dark:border-slate-700"
         )}
       >
-        <div className="text-2xl font-bold text-slate-900 dark:text-white">{total}</div>
-        <div className="text-sm text-slate-500 dark:text-slate-400">Total Tasks</div>
+        <div className="text-xl font-bold text-slate-900 dark:text-white sm:text-2xl">{total}</div>
+        <div className="text-xs text-slate-500 dark:text-slate-400 sm:text-sm">Total Tasks</div>
       </div>
       {metricConfig.map(({ key, label, variant }) => (
         <div
           key={key}
           className={cn(
-            "rounded-lg border bg-white p-4 dark:bg-slate-800",
+            "rounded-lg border bg-white p-3 dark:bg-slate-800 sm:p-4",
             variant === "overdue" && "border-red-200 dark:border-red-900/50",
             variant === "in-progress" && "border-blue-200 dark:border-blue-900/50",
             variant === "complete" && "border-green-200 dark:border-green-900/50",
@@ -51,12 +51,12 @@ export function DashboardMetrics({
           )}
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">
+            <span className="text-xl font-bold text-slate-900 dark:text-white sm:text-2xl">
               {counts[key]}
             </span>
-            <Badge variant={variant}>{label}</Badge>
+            <Badge variant={variant} className="text-xs">{label}</Badge>
           </div>
-          <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{label}</div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">{label}</div>
         </div>
       ))}
     </div>
