@@ -37,6 +37,7 @@ export type Task = {
   meetingReference?: string;
   projectName?: string;
   projectId?: string;
+  organizationId?: string;
   history: {
     date: string;
     action: string;

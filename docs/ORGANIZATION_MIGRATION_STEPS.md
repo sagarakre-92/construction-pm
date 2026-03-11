@@ -21,6 +21,8 @@ The app is being made **organization-aware** while still behaving like a single-
 
 - **Step 5 (code):** Project queries are organization-scoped. `getCurrentOrganization()` returns the current user’s org; `getProjectsForOrganization(organizationId)` fetches projects for that org; `getProjectsWithDetails()` uses the current org and returns only that org’s projects. UI unchanged; data access is org-aware.
 
+- **Migration `009_tasks_organization_id.sql`** (Step 6): Adds `organization_id` to `orat_tasks`, backfills from parent project, NOT NULL, FK to `organizations`, index, and CHECK constraint so `task.organization_id` must match `project.organization_id`. **createTask** sets `organization_id` from the project; task list remains org-scoped via projects (no extra task filter). **Enforcement:** DB CHECK constraint keeps task and project org in sync; no trigger or app-only guard needed.
+
 No UI changes for org selection; project creation still uses the same dialog; the server sets `organization_id` from the user’s membership.
 
 ---

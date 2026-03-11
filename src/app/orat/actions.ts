@@ -160,6 +160,7 @@ export async function getProjectsForOrganization(
       status: (t.status as TaskStatus) ?? "Not Started",
       meetingReference: t.meeting_reference ?? undefined,
       projectId: t.project_id,
+      organizationId: t.organization_id ?? undefined,
       history: history as Task["history"],
     });
     tasksByProject.set(t.project_id, list);
@@ -373,6 +374,13 @@ export async function createTask(
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
 
+  const { data: proj, error: projErr } = await supabase
+    .from("orat_projects")
+    .select("organization_id")
+    .eq("id", projectId)
+    .single();
+  if (projErr || !proj?.organization_id) return { error: "Project not found or has no organization" };
+
   const { assigned_to_user_id, assigned_to_external_id } = await parseAssignee(
     supabase,
     projectId,
@@ -383,6 +391,7 @@ export async function createTask(
     .from("orat_tasks")
     .insert({
       project_id: projectId,
+      organization_id: proj.organization_id,
       title: data.title,
       description: data.description ?? null,
       assigned_to_user_id: assigned_to_user_id || null,
@@ -415,6 +424,7 @@ export async function createTask(
     status: (row.status as TaskStatus) ?? "Not Started",
     meetingReference: row.meeting_reference ?? undefined,
     projectId: row.project_id,
+    organizationId: row.organization_id ?? undefined,
     history: (row.history as Task["history"]) ?? [],
   };
   return { data: task };
