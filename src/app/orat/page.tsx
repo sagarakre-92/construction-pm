@@ -90,28 +90,61 @@ export default function ORATPage() {
   const [taskDialogMode, setTaskDialogMode] = useState<"create" | "edit">("create");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const FETCH_TIMEOUT_MS = 10000;
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [userIdRes, projectsRes, profilesRes] = await Promise.all([
-      getCurrentUserId(),
-      getProjectsWithDetails(),
-      getProfiles(),
-    ]);
-    if (userIdRes) setCurrentUserId(userIdRes);
-    if ("error" in projectsRes) setError(projectsRes.error);
-    else setProjects(projectsRes.data);
-    if ("data" in profilesRes) setProfiles(profilesRes.data);
-    if (userIdRes && "data" in profilesRes) {
-      const hasProfile = profilesRes.data.some((p) => p.id === userIdRes);
-      if (!hasProfile) await ensureProfile(userIdRes);
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Request timed out. Check your connection and try again.")), FETCH_TIMEOUT_MS)
+      );
+      const [userIdRes, projectsRes, profilesRes] = await Promise.race([
+        Promise.all([
+          getCurrentUserId(),
+          getProjectsWithDetails(),
+          getProfiles(),
+        ]),
+        timeoutPromise,
+      ]) as [string | null, { data: Project[] } | { error: string }, { data: InternalUser[] } | { error: string }];
+      if (userIdRes) setCurrentUserId(userIdRes);
+      if ("error" in projectsRes) {
+        setError(projectsRes.error);
+        setProjects([]);
+      } else {
+        setProjects(projectsRes.data);
+      }
+      if ("data" in profilesRes) setProfiles(profilesRes.data);
+      else setProfiles([]);
+      if (userIdRes && "data" in profilesRes) {
+        const hasProfile = profilesRes.data.some((p) => p.id === userIdRes);
+        if (!hasProfile) await ensureProfile(userIdRes);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load data";
+      setError(message);
+      setProjects([]);
+      setProfiles([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Safety: force exit loading state if still loading after 12s (e.g. server actions never resolve)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setLoading((prev) => {
+        if (!prev) return prev;
+        setError("Loading is taking too long. Check your connection or try again.");
+        return false;
+      });
+    }, 12000);
+    return () => clearTimeout(t);
+  }, []);
 
   const currentProject = useMemo(
     () =>
