@@ -92,8 +92,8 @@ export default function ORATPage() {
 
   const FETCH_TIMEOUT_MS = 10000;
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     setError(null);
     try {
       const timeoutPromise = new Promise<never>((_, reject) =>
@@ -217,9 +217,9 @@ export default function ORATPage() {
         return;
       }
       toast.success("Project created");
-      await fetchData();
       setCurrentProjectId(res.data.id);
       setCreateProjectOpen(false);
+      fetchData({ silent: true });
     },
     [fetchData]
   );
@@ -232,9 +232,9 @@ export default function ORATPage() {
         return;
       }
       toast.success("Project updated");
-      await fetchData();
       setEditProject(null);
       setEditProjectOpen(false);
+      fetchData({ silent: true });
     },
     [fetchData]
   );
@@ -250,40 +250,131 @@ export default function ORATPage() {
     setCurrentProjectId("all-projects");
     setArchiveProject(null);
     setArchiveDialogOpen(false);
-    await fetchData();
+    fetchData({ silent: true });
   }, [archiveProject, fetchData]);
 
   const handleTaskStatusChange = useCallback(
-    async (taskId: string, newStatus: TaskStatus) => {
+    (taskId: string, newStatus: TaskStatus) => {
       const historyEntry = {
         date: new Date().toISOString().slice(0, 10),
         action: `Status changed to ${newStatus}`,
         user: "Current User",
       };
-      const res = await updateTaskStatusAction(taskId, newStatus, historyEntry);
-      if ("error" in res) {
-        toast.error(res.error);
-        return;
+
+      let previousStatus: TaskStatus | null = null;
+      let previousHistory: Task["history"] | null = null;
+      for (const p of projects) {
+        const task = p.tasks.find((t) => t.id === taskId);
+        if (task) {
+          previousStatus = task.status as TaskStatus;
+          previousHistory = [...task.history];
+          break;
+        }
       }
-      toast.success("Task updated");
-      await fetchData();
+      if (previousStatus === null || previousHistory === null) return;
+
+      setProjects((prev) =>
+        prev.map((p) => ({
+          ...p,
+          tasks: p.tasks.map((t) =>
+            t.id === taskId
+              ? { ...t, status: newStatus, history: [...t.history, historyEntry] }
+              : t
+          ),
+        }))
+      );
+
+      updateTaskStatusAction(taskId, newStatus, historyEntry).then(
+        (res) => {
+          if ("error" in res) {
+            setProjects((prev) =>
+              prev.map((p) => ({
+                ...p,
+                tasks: p.tasks.map((t) =>
+                  t.id === taskId
+                    ? { ...t, status: previousStatus!, history: previousHistory! }
+                    : t
+                ),
+              }))
+            );
+            toast.error(res.error);
+            return;
+          }
+          toast.success("Task updated");
+        },
+        (err) => {
+          setProjects((prev) =>
+            prev.map((p) => ({
+              ...p,
+              tasks: p.tasks.map((t) =>
+                t.id === taskId
+                  ? { ...t, status: previousStatus!, history: previousHistory! }
+                  : t
+              ),
+            }))
+          );
+          toast.error(err?.message ?? "Failed to update task");
+        }
+      );
     },
-    [fetchData]
+    [projects]
   );
 
   const handleSaveTask = useCallback(
-    async (task: Task) => {
-      const res = await updateTaskAction(task);
-      if ("error" in res) {
-        toast.error(res.error);
-        return;
+    (task: Task) => {
+      const taskId = task.id;
+      const projectId = task.projectId;
+      let previousTask: Task | null = null;
+      for (const p of projects) {
+        const t = p.tasks.find((x) => x.id === taskId);
+        if (t) {
+          previousTask = { ...t, projectId: p.id, projectName: p.name };
+          break;
+        }
       }
-      toast.success("Task updated");
+      if (!previousTask || !projectId) return;
+
       setTaskDialogTask(null);
       setTaskDialogOpen(false);
-      await fetchData();
+      setProjects((prev) =>
+        prev.map((p) => ({
+          ...p,
+          tasks: p.tasks.map((t) =>
+            t.id === taskId ? { ...task, projectId: p.id, projectName: p.name } : t
+          ),
+        }))
+      );
+
+      updateTaskAction(task).then(
+        (res) => {
+          if ("error" in res) {
+            setProjects((prev) =>
+              prev.map((p) => ({
+                ...p,
+                tasks: p.tasks.map((t) =>
+                  t.id === taskId ? previousTask! : t
+                ),
+              }))
+            );
+            toast.error(res.error);
+            return;
+          }
+          toast.success("Task updated");
+        },
+        (err) => {
+          setProjects((prev) =>
+            prev.map((p) => ({
+              ...p,
+              tasks: p.tasks.map((t) =>
+                t.id === taskId ? previousTask! : t
+              ),
+            }))
+          );
+          toast.error(err?.message ?? "Failed to update task");
+        }
+      );
     },
-    [fetchData]
+    [projects]
   );
 
   const handleCreateTask = useCallback(
@@ -365,7 +456,10 @@ export default function ORATPage() {
         next.delete(taskId);
         return next;
       });
-      await fetchData();
+      setProjects((prev) =>
+        prev.map((p) => ({ ...p, tasks: p.tasks.filter((t) => t.id !== taskId) }))
+      );
+      fetchData({ silent: true });
     },
     [fetchData]
   );
