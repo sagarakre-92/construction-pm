@@ -61,11 +61,46 @@ export async function createOrganization(name: string): Promise<ActionResult<{ i
   return { data: { id: orgId } };
 }
 
-/** Create an organization invitation. Caller must be owner or admin. Returns invite link for email/log. */
+/** Complete onboarding: create organization and save user profile (first name, last name, role). */
+export async function completeOnboarding(
+  organizationName: string,
+  firstName: string,
+  lastName: string,
+  role: string
+): Promise<ActionResult<{ id: string }>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const orgRes = await createOrganization(organizationName.trim());
+  if ("error" in orgRes) return orgRes;
+  const orgId = orgRes.data.id;
+
+  const { error: profileError } = await supabase.from("profiles").upsert(
+    {
+      id: session.user.id,
+      first_name: (firstName ?? "").trim(),
+      last_name: (lastName ?? "").trim(),
+      role: (role ?? "").trim(),
+      company: "",
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" }
+  );
+  if (profileError) return { error: profileError.message };
+
+  return { data: { id: orgId } };
+}
+
+/** Create an organization invitation with first name, last name, email, title. Caller must be owner or admin. */
 export async function createInvitation(
   organizationId: string,
   email: string,
-  role: "admin" | "member"
+  firstName: string,
+  lastName: string,
+  title: string
 ): Promise<ActionResult<{ inviteLink: string; token: string }>> {
   const supabase = await createClient();
   const {
@@ -76,7 +111,9 @@ export async function createInvitation(
   const { data, error } = await supabase.rpc("orat_create_organization_invitation", {
     p_organization_id: organizationId,
     p_email: email.trim(),
-    p_role: role,
+    p_first_name: (firstName ?? "").trim(),
+    p_last_name: (lastName ?? "").trim(),
+    p_title: (title ?? "").trim(),
   });
 
   if (error) return { error: error.message };

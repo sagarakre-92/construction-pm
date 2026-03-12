@@ -1,25 +1,23 @@
--- RPCs and helper for organization invitations.
--- orat_create_organization_invitation: only owners/admins; creates pending invite with unique token.
--- orat_accept_organization_invitation: validates token, adds user to org, marks invite accepted (one-time use).
--- orat_user_org_role: returns current user's role in their org (for UI: show invite only to owner/admin).
+-- Add first name, last name, and title to organization invitations.
+-- Title is displayed on the invite form; on accept, these are applied to the user's profile.
 
--- Role of current user in their organization (null if no org or not member)
-create or replace function public.orat_user_org_role()
-returns text
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select role from public.organization_members where user_id = auth.uid() limit 1;
-$$;
+alter table public.organization_invitations
+  add column if not exists first_name text not null default '',
+  add column if not exists last_name text not null default '',
+  add column if not exists title text not null default '';
 
--- Create invitation: current user must be owner or admin of the org.
--- (Extended in 017 with first_name, last_name, title.)
+comment on column public.organization_invitations.first_name is 'Invitee first name; applied to profile on accept.';
+comment on column public.organization_invitations.last_name is 'Invitee last name; applied to profile on accept.';
+comment on column public.organization_invitations.title is 'Invitee title (e.g. Project Manager); applied to profile.role on accept.';
+
+-- Create invitation RPC with first_name, last_name, title; org role defaults to member.
 create or replace function public.orat_create_organization_invitation(
   p_organization_id uuid,
   p_email text,
-  p_role text
+  p_first_name text default '',
+  p_last_name text default '',
+  p_title text default '',
+  p_role text default 'member'
 )
 returns jsonb
 language plpgsql
@@ -32,6 +30,7 @@ declare
   v_invite_id uuid;
   v_token text;
   v_email_trimmed text;
+  v_role text;
 begin
   v_uid := auth.uid();
   if v_uid is null then
@@ -43,8 +42,9 @@ begin
     return jsonb_build_object('error', 'Email is required');
   end if;
 
-  if p_role is null or p_role not in ('admin', 'member') then
-    return jsonb_build_object('error', 'Role must be admin or member');
+  v_role := coalesce(nullif(trim(p_role), ''), 'member');
+  if v_role not in ('admin', 'member') then
+    v_role := 'member';
   end if;
 
   select role into v_user_role
@@ -59,7 +59,6 @@ begin
     return jsonb_build_object('error', 'Only owners and admins can invite members');
   end if;
 
-  -- Prevent inviting existing member (by email; requires auth in search_path)
   if exists (
     select 1 from public.organization_members m
     join auth.users u on u.id = m.user_id
@@ -68,7 +67,6 @@ begin
     return jsonb_build_object('error', 'This user is already a member');
   end if;
 
-  -- Prevent duplicate pending invite
   if exists (
     select 1 from public.organization_invitations
     where organization_id = p_organization_id and lower(email) = v_email_trimmed and status = 'pending'
@@ -76,15 +74,25 @@ begin
     return jsonb_build_object('error', 'An invitation is already pending for this email');
   end if;
 
-  insert into public.organization_invitations (organization_id, email, role, invited_by)
-  values (p_organization_id, v_email_trimmed, p_role, v_uid)
+  insert into public.organization_invitations (
+    organization_id, email, role, invited_by,
+    first_name, last_name, title
+  )
+  values (
+    p_organization_id, v_email_trimmed, v_role, v_uid,
+    coalesce(trim(p_first_name), ''),
+    coalesce(trim(p_last_name), ''),
+    coalesce(trim(p_title), '')
+  )
   returning id, token into v_invite_id, v_token;
 
   return jsonb_build_object('id', v_invite_id, 'token', v_token);
 end;
 $$;
 
--- Accept invitation: validate token, add current user to org, mark invite accepted.
+grant execute on function public.orat_create_organization_invitation(uuid, text, text, text, text, text) to authenticated;
+
+-- Update accept RPC to apply invitee first_name, last_name, title to user profile on accept.
 create or replace function public.orat_accept_organization_invitation(p_token text)
 returns jsonb
 language plpgsql
@@ -104,7 +112,7 @@ begin
     return jsonb_build_object('error', 'Invalid invitation link');
   end if;
 
-  select id, organization_id, email, role, status, expires_at
+  select id, organization_id, email, role, status, expires_at, first_name, last_name, title
   into v_invite
   from public.organization_invitations
   where token = trim(p_token)
@@ -121,7 +129,6 @@ begin
     return jsonb_build_object('error', 'This invitation has expired');
   end if;
 
-  -- User already in org?
   if exists (
     select 1 from public.organization_members
     where organization_id = v_invite.organization_id and user_id = v_uid
@@ -133,6 +140,22 @@ begin
   insert into public.organization_members (organization_id, user_id, role)
   values (v_invite.organization_id, v_uid, v_invite.role);
 
+  insert into public.profiles (id, first_name, last_name, role, company, created_at, updated_at)
+  values (
+    v_uid,
+    coalesce(trim(v_invite.first_name), ''),
+    coalesce(trim(v_invite.last_name), ''),
+    coalesce(trim(v_invite.title), ''),
+    '',
+    now(),
+    now()
+  )
+  on conflict (id) do update set
+    first_name = coalesce(nullif(trim(v_invite.first_name), ''), profiles.first_name),
+    last_name = coalesce(nullif(trim(v_invite.last_name), ''), profiles.last_name),
+    role = coalesce(nullif(trim(v_invite.title), ''), profiles.role),
+    updated_at = now();
+
   update public.organization_invitations
   set status = 'accepted', accepted_at = now()
   where id = v_invite.id;
@@ -140,7 +163,3 @@ begin
   return jsonb_build_object('ok', true);
 end;
 $$;
-
-grant execute on function public.orat_user_org_role() to authenticated;
-grant execute on function public.orat_create_organization_invitation(uuid, text, text) to authenticated;
-grant execute on function public.orat_accept_organization_invitation(text) to authenticated;

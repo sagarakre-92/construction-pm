@@ -130,6 +130,9 @@ export type OrgInvitationRow = {
   status: string;
   created_at: string;
   expires_at: string;
+  first_name: string;
+  last_name: string;
+  title: string;
 };
 
 /** Members and pending invitations for an org. Caller must be owner/admin (enforced by RLS). */
@@ -151,13 +154,58 @@ export async function getOrganizationMembersAndInvitations(
       .eq("organization_id", organizationId),
     supabase
       .from("organization_invitations")
-      .select("id, email, role, status, created_at, expires_at")
+      .select("id, email, role, status, created_at, expires_at, first_name, last_name, title")
       .eq("organization_id", organizationId)
       .eq("status", "pending"),
   ]);
 
   if (membersRes.error) return { error: membersRes.error.message };
-  if (invitesRes.error) return { error: invitesRes.error.message };
+  if (invitesRes.error) {
+    if (invitesRes.error.message?.includes("first_name") || invitesRes.error.message?.includes("column")) {
+      const fallback = await supabase
+        .from("organization_invitations")
+        .select("id, email, role, status, created_at, expires_at")
+        .eq("organization_id", organizationId)
+        .eq("status", "pending");
+      if (fallback.error) return { error: fallback.error.message };
+      const pendingInvitations: OrgInvitationRow[] = (fallback.data ?? []).map(
+        (i: { id: string; email: string; role: string; status: string; created_at: string; expires_at: string }) => ({
+          id: i.id,
+          email: i.email,
+          role: i.role,
+          status: i.status,
+          created_at: i.created_at,
+          expires_at: i.expires_at,
+          first_name: "",
+          last_name: "",
+          title: "",
+        })
+      );
+      const memberRows = membersRes.data ?? [];
+      const userIds = memberRows.map((m: { user_id: string }) => m.user_id);
+      const profilesMap: Record<string, { first_name: string; last_name: string }> = {};
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, first_name, last_name")
+          .in("id", userIds);
+        for (const p of profiles ?? []) {
+          profilesMap[p.id] = { first_name: p.first_name ?? "", last_name: p.last_name ?? "" };
+        }
+      }
+      const members: OrgMemberRow[] = memberRows.map((m: { user_id: string; role: string }) => {
+        const profile = profilesMap[m.user_id];
+        return {
+          user_id: m.user_id,
+          role: m.role,
+          first_name: profile?.first_name ?? "",
+          last_name: profile?.last_name ?? "",
+        };
+      });
+      return { data: { members, pendingInvitations } };
+    }
+    return { error: invitesRes.error.message };
+  }
 
   const memberRows = membersRes.data ?? [];
   const userIds = memberRows.map((m: { user_id: string }) => m.user_id);
@@ -188,13 +236,26 @@ export async function getOrganizationMembersAndInvitations(
   );
 
   const pendingInvitations: OrgInvitationRow[] = (invitesRes.data ?? []).map(
-    (i: { id: string; email: string; role: string; status: string; created_at: string; expires_at: string }) => ({
+    (i: {
+      id: string;
+      email: string;
+      role: string;
+      status: string;
+      created_at: string;
+      expires_at: string;
+      first_name?: string;
+      last_name?: string;
+      title?: string;
+    }) => ({
       id: i.id,
       email: i.email,
       role: i.role,
       status: i.status,
       created_at: i.created_at,
       expires_at: i.expires_at,
+      first_name: i.first_name ?? "",
+      last_name: i.last_name ?? "",
+      title: i.title ?? "",
     })
   );
 

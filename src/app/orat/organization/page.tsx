@@ -76,7 +76,17 @@ export default async function OrganizationPage() {
                 key={inv.id}
                 className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
               >
-                <span className="text-slate-900 dark:text-white">{inv.email}</span>
+                <div className="min-w-0">
+                  <span className="font-medium text-slate-900 dark:text-white">
+                    {[inv.first_name, inv.last_name].filter(Boolean).join(" ").trim() || inv.email}
+                  </span>
+                  {inv.email && (inv.first_name || inv.last_name) && (
+                    <span className="ml-1 text-slate-500 dark:text-slate-400">({inv.email})</span>
+                  )}
+                  {inv.title && (
+                    <span className="ml-1 text-slate-500 dark:text-slate-400">· {inv.title}</span>
+                  )}
+                </div>
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                   {inv.role}
                 </span>

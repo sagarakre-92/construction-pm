@@ -7,7 +7,12 @@ export default async function ORATLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const orgRes = await getCurrentOrganization();
+  let orgRes: Awaited<ReturnType<typeof getCurrentOrganization>>;
+  try {
+    orgRes = await getCurrentOrganization();
+  } catch {
+    redirect("/login");
+  }
   if ("error" in orgRes) redirect("/login");
   if (!orgRes.data) redirect("/onboarding");
 
