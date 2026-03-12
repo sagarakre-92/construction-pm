@@ -34,6 +34,7 @@ export type Task = {
   originalDueDate: string;
   currentDueDate: string;
   status: TaskStatus;
+  sortOrder?: number;
   meetingReference?: string;
   projectName?: string;
   projectId?: string;

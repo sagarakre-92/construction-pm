@@ -266,6 +266,7 @@ export async function createTask(
       original_due_date: data.originalDueDate,
       current_due_date: data.currentDueDate,
       status: data.status,
+      sort_order: 0,
       meeting_reference: data.meetingReference ?? null,
       history: data.history ?? [],
     })
@@ -286,6 +287,7 @@ export async function createTask(
     originalDueDate: dateOnly(row.original_due_date),
     currentDueDate: dateOnly(row.current_due_date),
     status: (row.status as TaskStatus) ?? "Not Started",
+    sortOrder: (row as { sort_order?: number }).sort_order ?? 0,
     meetingReference: row.meeting_reference ?? undefined,
     projectId: row.project_id,
     organizationId: row.organization_id ?? undefined,
@@ -312,20 +314,23 @@ export async function updateTask(task: Task): Promise<ActionResult<null>> {
     task.assignedTo
   );
 
+  const updatePayload: Record<string, unknown> = {
+    title: task.title,
+    description: task.description ?? null,
+    assigned_to_user_id: assigned_to_user_id || null,
+    assigned_to_external_id: assigned_to_external_id || null,
+    company: task.company ?? "",
+    start_date: task.startDate,
+    current_due_date: task.currentDueDate,
+    status: task.status,
+    meeting_reference: task.meetingReference ?? null,
+    history: task.history ?? [],
+  };
+  if (typeof task.sortOrder === "number") updatePayload.sort_order = task.sortOrder;
+
   const { error } = await supabase
     .from("orat_tasks")
-    .update({
-      title: task.title,
-      description: task.description ?? null,
-      assigned_to_user_id: assigned_to_user_id || null,
-      assigned_to_external_id: assigned_to_external_id || null,
-      company: task.company ?? "",
-      start_date: task.startDate,
-      current_due_date: task.currentDueDate,
-      status: task.status,
-      meeting_reference: task.meetingReference ?? null,
-      history: task.history ?? [],
-    })
+    .update(updatePayload)
     .eq("id", task.id);
 
   if (error) return { error: error.message };
@@ -364,6 +369,37 @@ export async function updateTaskStatus(
 
   if (error) return { error: error.message };
   return { data: null };
+}
+
+/** Updates sort_order for multiple tasks (e.g. after reordering in a column). */
+export async function reorderTasks(
+  updates: { taskId: string; sortOrder: number }[]
+): Promise<ActionResult<null>> {
+  try {
+    const supabase = await createClient();
+    const sessionRes = await supabase.auth.getSession();
+    const session = sessionRes?.data?.session ?? null;
+    if (!session?.user) return { error: "Not authenticated" };
+
+    if (!Array.isArray(updates) || updates.length === 0) return { data: null };
+
+    for (const { taskId, sortOrder } of updates) {
+      const access = await ensureTaskInCurrentOrg(taskId);
+      if (access && typeof access === "object" && "error" in access) {
+        const err = (access as { error: unknown }).error;
+        return { error: typeof err === "string" ? err : "Access denied" };
+      }
+      const { error } = await supabase
+        .from("orat_tasks")
+        .update({ sort_order: Number(sortOrder) })
+        .eq("id", taskId);
+      if (error) return { error: error.message || "Update failed" };
+    }
+    return { data: null };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { error: msg || "Failed to save order" };
+  }
 }
 
 export async function deleteTask(taskId: string): Promise<ActionResult<null>> {

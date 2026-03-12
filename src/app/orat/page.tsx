@@ -320,6 +320,66 @@ export default function ORATPage() {
     [projects]
   );
 
+  const handleReorder = useCallback(
+    (status: TaskStatus, orderedTaskIds: string[]) => {
+      if (orderedTaskIds.length === 0) return;
+      const taskToProject = new Map<string, string>();
+      for (const p of projects) {
+        for (const t of p.tasks) taskToProject.set(t.id, p.id);
+      }
+      const byProject = new Map<string, { taskId: string; sortOrder: number }[]>();
+      for (const id of orderedTaskIds) {
+        const projectId = taskToProject.get(id);
+        if (!projectId) continue;
+        const list = byProject.get(projectId) ?? [];
+        list.push({ taskId: id, sortOrder: list.length });
+        byProject.set(projectId, list);
+      }
+      const updates = Array.from(byProject.values()).flat();
+      if (updates.length === 0) return;
+
+      const previousProjects = projects;
+      setProjects((prev) =>
+        prev.map((p) => ({
+          ...p,
+          tasks: p.tasks.map((t) => {
+            const list = byProject.get(p.id);
+            if (!list) return t;
+            const u = list.find((x) => x.taskId === t.id);
+            if (!u) return t;
+            if (getEffectiveStatus(t) !== status) return t;
+            return { ...t, sortOrder: u.sortOrder };
+          }),
+        }))
+      );
+
+      fetch("/api/orat/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setProjects(previousProjects);
+            toast.error(typeof data?.error === "string" ? data.error : "Failed to save order");
+            return;
+          }
+          if (data && typeof data.error === "string") {
+            setProjects(previousProjects);
+            toast.error(data.error);
+            return;
+          }
+          toast.success("Order updated");
+        })
+        .catch((err: unknown) => {
+          setProjects(previousProjects);
+          toast.error(err instanceof Error ? err.message : "Failed to save order");
+        });
+    },
+    [projects]
+  );
+
   const handleSaveTask = useCallback(
     (task: Task) => {
       const taskId = task.id;
@@ -386,6 +446,7 @@ export default function ORATPage() {
         id: tempId,
         projectId: currentProject.id,
         projectName: currentProject.name,
+        sortOrder: 0,
         history: data.history ?? [],
       };
 
@@ -518,7 +579,7 @@ export default function ORATPage() {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
         <p className="text-red-600 dark:text-red-400">{error}</p>
-        <Button variant="outline" onClick={fetchData}>
+        <Button variant="outline" onClick={() => fetchData()}>
           Retry
         </Button>
       </div>
@@ -663,6 +724,7 @@ export default function ORATPage() {
                 setTaskDialogOpen(true);
               }}
               onStatusChange={handleTaskStatusChange}
+              onReorder={handleReorder}
               getAssigneeName={getAssigneeNameForProject}
             />
           ) : view === "list" ? (

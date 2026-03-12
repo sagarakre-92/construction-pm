@@ -136,7 +136,13 @@ export async function getProjectsForOrganization(
       .from("orat_external_stakeholders")
       .select("*")
       .in("project_id", projectIds),
-    supabase.from("orat_tasks").select("*").in("project_id", projectIds),
+    supabase
+      .from("orat_tasks")
+      .select("*")
+      .in("project_id", projectIds)
+      .order("project_id")
+      .order("status")
+      .order("sort_order"),
   ]);
 
   const membersByProject = new Map<string, string[]>();
@@ -177,6 +183,7 @@ export async function getProjectsForOrganization(
       originalDueDate: dateOnly(t.original_due_date),
       currentDueDate: dateOnly(t.current_due_date),
       status: (t.status as TaskStatus) ?? "Not Started",
+      sortOrder: (t as { sort_order?: number }).sort_order ?? 0,
       meetingReference: t.meeting_reference ?? undefined,
       projectId: t.project_id,
       organizationId: t.organization_id ?? undefined,
@@ -308,7 +315,8 @@ export async function getTasksForProject(
     .select("*")
     .eq("project_id", projectId)
     .eq("organization_id", organizationId)
-    .order("created_date", { ascending: true });
+    .order("status")
+    .order("sort_order");
 
   if (error) return { error: error.message };
 
@@ -327,6 +335,7 @@ export async function getTasksForProject(
       originalDueDate: dateOnly(t.original_due_date),
       currentDueDate: dateOnly(t.current_due_date),
       status: (t.status as TaskStatus) ?? "Not Started",
+      sortOrder: (t as { sort_order?: number }).sort_order ?? 0,
       meetingReference: t.meeting_reference ?? undefined,
       projectId: t.project_id,
       organizationId: t.organization_id ?? undefined,

@@ -20,6 +20,7 @@ interface KanbanViewProps {
   onToggleSelect: (taskId: string) => void;
   onTaskClick: (task: Task) => void;
   onStatusChange: (taskId: string, newStatus: TaskStatus) => void;
+  onReorder?: (status: TaskStatus, orderedTaskIds: string[]) => void;
   getAssigneeName: (id: string, company: string) => string;
 }
 
@@ -29,17 +30,19 @@ export function KanbanView({
   onToggleSelect,
   onTaskClick,
   onStatusChange,
+  onReorder,
   getAssigneeName,
 }: KanbanViewProps) {
   const handleDragStart = useCallback(
     (e: React.DragEvent, task: Task) => {
       e.dataTransfer.setData("taskId", task.id);
+      e.dataTransfer.setData("sourceStatus", getEffectiveStatus(task));
       e.dataTransfer.effectAllowed = "move";
     },
     []
   );
 
-  const handleDrop = useCallback(
+  const handleDropOnColumn = useCallback(
     (e: React.DragEvent, columnStatus: TaskStatus) => {
       e.preventDefault();
       const taskId = e.dataTransfer.getData("taskId");
@@ -48,14 +51,43 @@ export function KanbanView({
     [onStatusChange]
   );
 
+  const handleDropOnCard = useCallback(
+    (e: React.DragEvent, columnStatus: TaskStatus, insertBeforeTask: Task, columnTasks: Task[]) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const taskId = e.dataTransfer.getData("taskId");
+      const sourceStatus = e.dataTransfer.getData("sourceStatus") as TaskStatus | "";
+      if (!taskId) return;
+      if (sourceStatus === columnStatus && onReorder) {
+        const without = columnTasks.filter((t) => t.id !== taskId);
+        const insertIdx = without.findIndex((t) => t.id === insertBeforeTask.id);
+        const orderedIds =
+          insertIdx < 0
+            ? [...without.map((t) => t.id), taskId]
+            : [
+                ...without.slice(0, insertIdx).map((t) => t.id),
+                taskId,
+                ...without.slice(insertIdx).map((t) => t.id),
+              ];
+        onReorder(columnStatus, orderedIds);
+      } else {
+        onStatusChange(taskId, columnStatus);
+      }
+    },
+    [onReorder, onStatusChange]
+  );
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
   }, []);
 
-  const tasksByColumn = COLUMNS.map((col) => ({
+  const   tasksByColumn = COLUMNS.map((col) => ({
     ...col,
-    tasks: tasks.filter((t) => getEffectiveStatus(t) === col.status),
+    tasks: tasks
+      .filter((t) => getEffectiveStatus(t) === col.status)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
   }));
 
   return (
@@ -64,7 +96,7 @@ export function KanbanView({
         <div
           key={status}
           className="flex min-w-[260px] flex-col shrink-0 rounded-lg border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/30 md:min-w-0"
-          onDrop={(e) => handleDrop(e, status)}
+          onDrop={(e) => handleDropOnColumn(e, status)}
           onDragOver={handleDragOver}
         >
           <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -84,6 +116,8 @@ export function KanbanView({
                     key={task.id}
                     draggable
                     onDragStart={(e) => handleDragStart(e, task)}
+                    onDrop={(e) => handleDropOnCard(e, status, task, columnTasks)}
+                    onDragOver={handleDragOver}
                     onClick={() => onTaskClick(task)}
                     className={cn(
                       "cursor-grab rounded-lg border bg-white p-3 shadow-sm transition-shadow active:cursor-grabbing hover:shadow dark:bg-slate-800",
