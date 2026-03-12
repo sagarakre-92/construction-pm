@@ -69,8 +69,6 @@ async function getMockClient(overrides: {
     session = { user: { id: USER_ID } },
     orgId = ORG_A,
     orgRow = { id: ORG_A, name: "Org A", slug: "org-a" },
-    projectOrgId = ORG_A,
-    projectRow = { organization_id: projectOrgId },
     projects = [],
     tasks = [],
   } = overrides as {

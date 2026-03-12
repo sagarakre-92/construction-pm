@@ -40,11 +40,6 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Require auth for ORAT and onboarding: redirect unauthenticated users to login
-  const isAuthRoute =
-    pathname === "/login" ||
-    pathname === "/signup" ||
-    pathname.startsWith("/signup/") ||
-    pathname === "/auth/callback";
   const isProtectedRoute = pathname.startsWith("/orat") || pathname.startsWith("/onboarding");
   if (isProtectedRoute && !user) {
     return NextResponse.redirect(new URL("/login", request.url));
