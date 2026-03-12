@@ -287,18 +287,69 @@ export default function ORATPage() {
   );
 
   const handleCreateTask = useCallback(
-    async (data: Omit<Task, "id" | "history"> & { history: Task["history"] }) => {
+    (data: Omit<Task, "id" | "history"> & { history: Task["history"] }) => {
       if (!currentProject) return;
-      const res = await createTaskAction(currentProject.id, { ...data, history: data.history ?? [] });
-      if ("error" in res) {
-        toast.error(res.error);
-        return;
-      }
-      toast.success("Task created");
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const optimisticTask: Task = {
+        ...data,
+        id: tempId,
+        projectId: currentProject.id,
+        projectName: currentProject.name,
+        history: data.history ?? [],
+      };
+
       setTaskDialogOpen(false);
-      await fetchData();
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === currentProject.id
+            ? { ...p, tasks: [...p.tasks, optimisticTask] }
+            : p
+        )
+      );
+
+      createTaskAction(currentProject.id, { ...data, history: data.history ?? [] }).then(
+        (res) => {
+          if ("error" in res) {
+            setProjects((prev) =>
+              prev.map((p) =>
+                p.id === currentProject.id
+                  ? { ...p, tasks: p.tasks.filter((t) => t.id !== tempId) }
+                  : p
+              )
+            );
+            toast.error(res.error);
+            return;
+          }
+          const persisted = res.data;
+          setProjects((prev) =>
+            prev.map((p) =>
+              p.id === currentProject.id
+                ? {
+                    ...p,
+                    tasks: p.tasks.map((t) =>
+                      t.id === tempId
+                        ? { ...persisted, projectId: p.id, projectName: p.name }
+                        : t
+                    ),
+                  }
+                : p
+            )
+          );
+          toast.success("Task created");
+        },
+        (err) => {
+          setProjects((prev) =>
+            prev.map((p) =>
+              p.id === currentProject.id
+                ? { ...p, tasks: p.tasks.filter((t) => t.id !== tempId) }
+                : p
+            )
+          );
+          toast.error(err?.message ?? "Failed to create task");
+        }
+      );
     },
-    [currentProject, fetchData]
+    [currentProject]
   );
 
   const handleDeleteTask = useCallback(
