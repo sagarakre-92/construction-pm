@@ -5,12 +5,16 @@ import type {
   Project,
   Task,
   InternalUser,
-  ExternalStakeholder,
   TaskStatus,
-  Organization,
 } from "./types";
+import {
+  createProjectForOrganization,
+  ensureProjectInCurrentOrg,
+  ensureTaskInCurrentOrg,
+  type ActionResult,
+} from "./lib/org-data";
 
-type ActionResult<T> = { data: T } | { error: string };
+export type { ActionResult } from "./lib/org-data";
 
 function dateOnly(iso: string): string {
   return iso.slice(0, 10);
@@ -24,33 +28,29 @@ export async function getCurrentUserId(): Promise<string | null> {
   return session?.user?.id ?? null;
 }
 
-/** Returns the current user's organization (single-org model). Use for org-scoped data access. */
-export async function getCurrentOrganization(): Promise<ActionResult<Organization | null>> {
+/** Returns the current user's organization (single-org model). Delegates to org-data. */
+export async function getCurrentOrganization() {
+  return (await import("./lib/org-data")).getCurrentOrganization();
+}
+
+/** Creates a new organization and adds the current user as owner. For onboarding (user must not already belong to an org). */
+export async function createOrganization(name: string): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
 
-  const { data: orgId, error: rpcErr } = await supabase.rpc("orat_user_organization_id");
-  if (rpcErr) return { error: rpcErr.message };
-  if (!orgId) return { data: null };
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed) return { error: "Organization name is required" };
 
-  const { data: row, error } = await supabase
-    .from("organizations")
-    .select("id, name, slug")
-    .eq("id", orgId)
-    .single();
+  const { data: orgId, error } = await supabase.rpc("orat_create_organization", {
+    p_name: trimmed,
+  });
+
   if (error) return { error: error.message };
-  if (!row) return { data: null };
-
-  return {
-    data: {
-      id: row.id,
-      name: row.name ?? "",
-      slug: row.slug ?? "",
-    },
-  };
+  if (!orgId) return { error: "Failed to create organization" };
+  return { data: { id: orgId } };
 }
 
 export async function ensureProfile(userId: string): Promise<ActionResult<null>> {
@@ -93,92 +93,14 @@ export async function getProfiles(): Promise<ActionResult<InternalUser[]>> {
   return { data: list };
 }
 
-/** Fetches projects with details for a given organization. Used by getProjectsWithDetails. */
-export async function getProjectsForOrganization(
-  organizationId: string
-): Promise<ActionResult<Project[]>> {
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) return { error: "Not authenticated" };
+/** Fetches projects with details for a given organization. Delegates to org-data. */
+export async function getProjectsForOrganization(organizationId: string) {
+  return (await import("./lib/org-data")).getProjectsForOrganization(organizationId);
+}
 
-  const { data: projects, error: projErr } = await supabase
-    .from("orat_projects")
-    .select("id, name, description, created_date, archived, organization_id")
-    .eq("organization_id", organizationId)
-    .order("created_date", { ascending: false });
-
-  if (projErr) return { error: projErr.message };
-  if (!projects?.length) return { data: [] };
-
-  const projectIds = projects.map((p) => p.id);
-
-  const [membersRes, externalsRes, tasksRes] = await Promise.all([
-    supabase.from("orat_project_members").select("project_id, user_id").in("project_id", projectIds),
-    supabase.from("orat_external_stakeholders").select("*").in("project_id", projectIds),
-    supabase.from("orat_tasks").select("*").in("project_id", projectIds),
-  ]);
-
-  const membersByProject = new Map<string, string[]>();
-  for (const m of membersRes.data ?? []) {
-    const list = membersByProject.get(m.project_id) ?? [];
-    list.push(m.user_id);
-    membersByProject.set(m.project_id, list);
-  }
-
-  const externalsByProject = new Map<string, ExternalStakeholder[]>();
-  for (const e of externalsRes.data ?? []) {
-    const list = externalsByProject.get(e.project_id) ?? [];
-    list.push({
-      id: e.id,
-      firstName: e.first_name ?? "",
-      lastName: e.last_name ?? "",
-      role: e.role ?? "",
-      company: e.company ?? "",
-      projectId: e.project_id,
-    });
-    externalsByProject.set(e.project_id, list);
-  }
-
-  const tasksByProject = new Map<string, Task[]>();
-  for (const t of tasksRes.data ?? []) {
-    const assigneeId =
-      t.assigned_to_user_id ?? t.assigned_to_external_id ?? "";
-    const list = tasksByProject.get(t.project_id) ?? [];
-    const history = Array.isArray(t.history) ? t.history : [];
-    list.push({
-      id: t.id,
-      title: t.title,
-      description: t.description ?? undefined,
-      assignedTo: assigneeId,
-      company: t.company ?? "",
-      createdDate: dateOnly(t.created_date),
-      startDate: dateOnly(t.start_date),
-      originalDueDate: dateOnly(t.original_due_date),
-      currentDueDate: dateOnly(t.current_due_date),
-      status: (t.status as TaskStatus) ?? "Not Started",
-      meetingReference: t.meeting_reference ?? undefined,
-      projectId: t.project_id,
-      organizationId: t.organization_id ?? undefined,
-      history: history as Task["history"],
-    });
-    tasksByProject.set(t.project_id, list);
-  }
-
-  const result: Project[] = projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    description: p.description ?? undefined,
-    createdDate: dateOnly(p.created_date),
-    archived: p.archived ?? false,
-    organizationId: p.organization_id ?? "",
-    internalTeamMembers: membersByProject.get(p.id) ?? [],
-    externalStakeholders: externalsByProject.get(p.id) ?? [],
-    tasks: tasksByProject.get(p.id) ?? [],
-  }));
-
-  return { data: result };
+/** Fetches tasks for a project scoped by organization. Delegates to org-data. */
+export async function getTasksForProject(projectId: string, organizationId: string) {
+  return (await import("./lib/org-data")).getTasksForProject(projectId, organizationId);
 }
 
 /** Fetches projects for the current user's organization (single default org). Keeps UI behavior unchanged. */
@@ -192,82 +114,10 @@ export async function getProjectsWithDetails(): Promise<ActionResult<Project[]>>
 export async function createProject(
   data: Omit<Project, "id" | "createdDate" | "tasks" | "organizationId">
 ): Promise<ActionResult<Project>> {
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const userId = session?.user?.id;
-  if (!userId) return { error: "Not authenticated" };
-
-  // Use RPC so project + owner membership are created with definer rights (avoids RLS on insert)
-  const { data: projectId, error: rpcErr } = await supabase.rpc("orat_create_project", {
-    p_name: data.name,
-    p_description: data.description ?? null,
-  });
-
-  if (rpcErr || !projectId) return { error: rpcErr?.message ?? "Failed to create project" };
-
-  const memberIds = [...new Set([...(data.internalTeamMembers ?? []), userId])];
-  if (memberIds.length > 1) {
-    const { error: membersErr } = await supabase.from("orat_project_members").insert(
-      memberIds.filter((id) => id !== userId).map((user_id) => ({ project_id: projectId, user_id }))
-    );
-    if (membersErr) return { error: membersErr.message };
-  }
-
-  const proj = {
-    id: projectId,
-    name: data.name,
-    description: data.description ?? undefined,
-    created_date: new Date().toISOString().slice(0, 10),
-    archived: false,
-  };
-
-  const externals = data.externalStakeholders ?? [];
-  if (externals.length > 0) {
-    await supabase.from("orat_external_stakeholders").insert(
-      externals.map((e) => ({
-        project_id: projectId,
-        first_name: e.firstName,
-        last_name: e.lastName,
-        role: e.role,
-        company: e.company,
-      }))
-    );
-  }
-
-  const { data: extList } = await supabase
-    .from("orat_external_stakeholders")
-    .select("id, first_name, last_name, role, company, project_id")
-    .eq("project_id", projectId);
-  const externalStakeholders: ExternalStakeholder[] = (extList ?? []).map((e) => ({
-    id: e.id,
-    firstName: e.first_name ?? "",
-    lastName: e.last_name ?? "",
-    role: e.role ?? "",
-    company: e.company ?? "",
-    projectId: e.project_id,
-  }));
-
-  const { data: projRow } = await supabase
-    .from("orat_projects")
-    .select("organization_id")
-    .eq("id", projectId)
-    .single();
-
-  return {
-    data: {
-      id: proj.id,
-      name: proj.name,
-      description: proj.description ?? undefined,
-      createdDate: dateOnly(proj.created_date),
-      archived: proj.archived ?? false,
-      organizationId: projRow?.organization_id ?? "",
-      internalTeamMembers: memberIds,
-      externalStakeholders,
-      tasks: [],
-    },
-  };
+  const orgRes = await getCurrentOrganization();
+  if ("error" in orgRes) return orgRes;
+  if (!orgRes.data) return { error: "No organization" };
+  return createProjectForOrganization(orgRes.data.id, data);
 }
 
 export async function updateProject(project: Project): Promise<ActionResult<null>> {
@@ -276,6 +126,9 @@ export async function updateProject(project: Project): Promise<ActionResult<null
     data: { session },
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
+
+  const access = await ensureProjectInCurrentOrg(project.id);
+  if ("error" in access) return access;
 
   const { error: projErr } = await supabase
     .from("orat_projects")
@@ -340,6 +193,14 @@ export async function updateProject(project: Project): Promise<ActionResult<null
 
 export async function archiveProject(projectId: string): Promise<ActionResult<null>> {
   const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const access = await ensureProjectInCurrentOrg(projectId);
+  if ("error" in access) return access;
+
   const { error } = await supabase
     .from("orat_projects")
     .update({ archived: true })
@@ -373,6 +234,9 @@ export async function createTask(
     data: { session },
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
+
+  const access = await ensureProjectInCurrentOrg(projectId);
+  if ("error" in access) return access;
 
   const { data: proj, error: projErr } = await supabase
     .from("orat_projects")
@@ -438,6 +302,10 @@ export async function updateTask(task: Task): Promise<ActionResult<null>> {
   if (!session?.user) return { error: "Not authenticated" };
 
   if (!task.projectId) return { error: "Project ID required" };
+
+  const access = await ensureProjectInCurrentOrg(task.projectId);
+  if ("error" in access) return access;
+
   const { assigned_to_user_id, assigned_to_external_id } = await parseAssignee(
     supabase,
     task.projectId,
@@ -475,6 +343,9 @@ export async function updateTaskStatus(
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
 
+  const access = await ensureTaskInCurrentOrg(taskId);
+  if ("error" in access) return access;
+
   const { data: task, error: fetchErr } = await supabase
     .from("orat_tasks")
     .select("history")
@@ -501,6 +372,9 @@ export async function deleteTask(taskId: string): Promise<ActionResult<null>> {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
+
+  const access = await ensureTaskInCurrentOrg(taskId);
+  if ("error" in access) return access;
 
   const { error } = await supabase.from("orat_tasks").delete().eq("id", taskId);
   if (error) return { error: error.message };

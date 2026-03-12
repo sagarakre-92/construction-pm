@@ -21,7 +21,15 @@ The app is being made **organization-aware** while still behaving like a single-
 
 - **Step 5 (code):** Project queries are organization-scoped. `getCurrentOrganization()` returns the current user’s org; `getProjectsForOrganization(organizationId)` fetches projects for that org; `getProjectsWithDetails()` uses the current org and returns only that org’s projects. UI unchanged; data access is org-aware.
 
-- **Migration `009_tasks_organization_id.sql`** (Step 6): Adds `organization_id` to `orat_tasks`, backfills from parent project, NOT NULL, FK to `organizations`, index, and CHECK constraint so `task.organization_id` must match `project.organization_id`. **createTask** sets `organization_id` from the project; task list remains org-scoped via projects (no extra task filter). **Enforcement:** DB CHECK constraint keeps task and project org in sync; no trigger or app-only guard needed.
+- **Migration `009_tasks_organization_id.sql`** (Step 6): Adds `organization_id` to `orat_tasks`, backfills from parent project, NOT NULL, FK to `organizations`, index, and trigger so `task.organization_id` stays in sync with `project.organization_id`. **createTask** sets `organization_id` from the project. **Enforcement:** DB trigger keeps task and project org in sync.
+
+- **Step 8 (code):** Shared org-data helpers in `src/app/orat/lib/org-data.ts`: `getCurrentOrganization()`, `getProjectsForOrganization(orgId)`, `createProjectForOrganization(orgId, data)`, `getTasksForProject(projectId, orgId)`. Actions delegate to these; `createProject` uses current org + `createProjectForOrganization`.
+
+- **Migration `010_authorization_org_aware.sql`** (Step 9): RLS is organization-aware. `orat_can_access_project(proj_id, u)` now also requires `project.organization_id = orat_user_organization_id()`, so SELECT/UPDATE/DELETE on projects, members, externals, and tasks only succeed when the project is in the current user’s org. Single-org behavior unchanged.
+
+- **Step 9 (code):** Server-side authorization checks before mutations: `ensureProjectInCurrentOrg(projectId)` and `ensureTaskInCurrentOrg(taskId)` in `org-data.ts`. Used in **updateProject**, **archiveProject**, **createTask**, **updateTask**, **updateTaskStatus**, **deleteTask**. If the resource is not in the current user’s organization, the action returns an error. This adds defense-in-depth on top of RLS.
+
+- **Migration `011_rls_organization_ownership.sql`** (Step 10): Project INSERT and DELETE policies are organization-aware. **INSERT:** only allow rows where `owner_id = auth.uid()` and `organization_id = orat_user_organization_id()` (so new projects must belong to the current user’s org; the RPC already enforces this). **DELETE:** only allow when `owner_id = auth.uid()` and `organization_id = orat_user_organization_id()` (owner can only delete projects in their org). SELECT/UPDATE remain enforced via `orat_can_access_project` (010); tasks/members/externals unchanged.
 
 No UI changes for org selection; project creation still uses the same dialog; the server sets `organization_id` from the user’s membership.
 
@@ -103,10 +111,30 @@ Note: If you have many owners, you may want to name orgs uniquely (e.g. “Defau
 
 ---
 
-### 3. Next steps (when you’re ready)
+### Step 9 (010): Run org-aware RLS migration
 
-- **Use `organization_id` in RLS**  
-  Add conditions so project/task access can be “user is in the project’s org” (e.g. using `orat_user_organization_id()`), while keeping “owner or project member” as fallback so existing behavior stays.
+Run **010_authorization_org_aware.sql** (e.g. `supabase db push` or SQL Editor). It updates `orat_can_access_project` so that project/task access also requires the project to be in the current user’s organization. No app code change required beyond what’s already in place.
+
+### Step 10 (011): Run organization-ownership RLS
+
+Run **011_rls_organization_ownership.sql** (e.g. `supabase db push` or SQL Editor). It tightens project INSERT and DELETE so they require the resource to be in the current user’s organization.
+
+---
+
+### 3. Organization membership and single-org assumption
+
+- **`organization_members` is required now.** It is the source of “which org is the current user in.” `orat_user_organization_id()` reads from it; RLS and app code depend on it. Migration 008 adds existing project owners to the default org so they can create projects.
+- **Single-company assumption:** We use **one org per user** (unique on `organization_members.user_id`). There is no org switcher; the app behaves as one company. This is acceptable for the single-company phase. New users must be added to an org (e.g. default) to create projects—manually or via a future onboarding flow.
+
+### 4. Future limitations of the current approach
+
+- **Multi-org per user:** If a user is allowed to belong to multiple orgs, the current model (one row per user in `organization_members`) would need to change (e.g. remove unique on `user_id`, add “current org” context or session). RLS would need to scope by “current org” explicitly.
+- **Org switcher:** The UI and `getCurrentOrganization()` assume a single org; adding a switcher would require storing selected org (e.g. session/cookie) and passing it through.
+- **Cross-org project access:** Today, a user can only access projects in their (single) org. Project membership is secondary to org membership for visibility.
+
+---
+
+### 5. Next steps (when you’re ready)
 
 - **Scope profiles by org**  
   When you want “only show users in my org”, filter `profiles` (or a view) by org membership using `organization_members` and `orat_user_organization_id()`.
@@ -125,6 +153,8 @@ Note: If you have many owners, you may want to name orgs uniquely (e.g. “Defau
 |------|--------|
 | 1 | Run `005_organizations_additive.sql` in Supabase (SQL Editor or `supabase db push`). |
 | 2 | Optional: run the backfill SQL above to create one org per owner and set `orat_projects.organization_id`. |
-| 3 | Later: add RLS using `orat_user_organization_id()`, scope profiles, add create-org RPC and UI when needed. |
+| 9 | Run `010_authorization_org_aware.sql` so RLS is org-aware (SQL Editor or `supabase db push`). |
+| 10 | Run `011_rls_organization_ownership.sql` so project INSERT/DELETE are org-scoped (SQL Editor or `supabase db push`). |
+| Later | Scope profiles by org, add create-org RPC and UI when needed. |
 
 No env vars or app redeploy are required for Step 1.
