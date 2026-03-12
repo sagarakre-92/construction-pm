@@ -161,7 +161,7 @@ export async function getOrganizationMembersAndInvitations(
 
   const memberRows = membersRes.data ?? [];
   const userIds = memberRows.map((m: { user_id: string }) => m.user_id);
-  let profilesMap: Record<string, { first_name: string; last_name: string }> = {};
+  const profilesMap: Record<string, { first_name: string; last_name: string }> = {};
   if (userIds.length > 0) {
     const { data: profiles } = await supabase
       .from("profiles")
