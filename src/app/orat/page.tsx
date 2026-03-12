@@ -434,11 +434,13 @@ export default function ORATPage() {
                 </>
               )}
               <DropdownMenuItem
-                onSelect={async (e) => {
+                onSelect={(e) => {
                   e.preventDefault();
                   const supabase = createClient();
-                  await supabase.auth.signOut();
-                  window.location.href = "/";
+                  supabase.auth.signOut().then(
+                    () => { window.location.href = "/"; },
+                    () => { window.location.href = "/"; }
+                  );
                 }}
               >
                 Sign out
