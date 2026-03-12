@@ -106,6 +106,101 @@ export async function getCurrentOrganization(): Promise<
   };
 }
 
+/** Current user's role in their organization (owner, admin, member) or null. */
+export async function getCurrentUserOrgRole(): Promise<
+  "owner" | "admin" | "member" | null
+> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("orat_user_org_role");
+  if (data === "owner" || data === "admin" || data === "member") return data;
+  return null;
+}
+
+export type OrgMemberRow = {
+  user_id: string;
+  role: string;
+  first_name: string;
+  last_name: string;
+};
+
+export type OrgInvitationRow = {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+};
+
+/** Members and pending invitations for an org. Caller must be owner/admin (enforced by RLS). */
+export async function getOrganizationMembersAndInvitations(
+  organizationId: string
+): Promise<
+  ActionResult<{ members: OrgMemberRow[]; pendingInvitations: OrgInvitationRow[] }>
+> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const [membersRes, invitesRes] = await Promise.all([
+    supabase
+      .from("organization_members")
+      .select("user_id, role")
+      .eq("organization_id", organizationId),
+    supabase
+      .from("organization_invitations")
+      .select("id, email, role, status, created_at, expires_at")
+      .eq("organization_id", organizationId)
+      .eq("status", "pending"),
+  ]);
+
+  if (membersRes.error) return { error: membersRes.error.message };
+  if (invitesRes.error) return { error: invitesRes.error.message };
+
+  const memberRows = membersRes.data ?? [];
+  const userIds = memberRows.map((m: { user_id: string }) => m.user_id);
+  let profilesMap: Record<string, { first_name: string; last_name: string }> = {};
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, first_name, last_name")
+      .in("id", userIds);
+    for (const p of profiles ?? []) {
+      profilesMap[p.id] = {
+        first_name: p.first_name ?? "",
+        last_name: p.last_name ?? "",
+      };
+    }
+  }
+
+  const members: OrgMemberRow[] = memberRows.map(
+    (m: { user_id: string; role: string }) => {
+      const profile = profilesMap[m.user_id];
+      return {
+        user_id: m.user_id,
+        role: m.role,
+        first_name: profile?.first_name ?? "",
+        last_name: profile?.last_name ?? "",
+      };
+    }
+  );
+
+  const pendingInvitations: OrgInvitationRow[] = (invitesRes.data ?? []).map(
+    (i: { id: string; email: string; role: string; status: string; created_at: string; expires_at: string }) => ({
+      id: i.id,
+      email: i.email,
+      role: i.role,
+      status: i.status,
+      created_at: i.created_at,
+      expires_at: i.expires_at,
+    })
+  );
+
+  return { data: { members, pendingInvitations } };
+}
+
 /** Fetches projects with details for a given organization. */
 export async function getProjectsForOrganization(
   organizationId: string

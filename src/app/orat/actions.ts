@@ -16,6 +16,14 @@ import {
 
 export type { ActionResult } from "./lib/org-data";
 
+export async function getCurrentUserOrgRole() {
+  return (await import("./lib/org-data")).getCurrentUserOrgRole();
+}
+
+export async function getOrganizationMembersAndInvitations(organizationId: string) {
+  return (await import("./lib/org-data")).getOrganizationMembersAndInvitations(organizationId);
+}
+
 function dateOnly(iso: string): string {
   return iso.slice(0, 10);
 }
@@ -51,6 +59,71 @@ export async function createOrganization(name: string): Promise<ActionResult<{ i
   if (error) return { error: error.message };
   if (!orgId) return { error: "Failed to create organization" };
   return { data: { id: orgId } };
+}
+
+/** Create an organization invitation. Caller must be owner or admin. Returns invite link for email/log. */
+export async function createInvitation(
+  organizationId: string,
+  email: string,
+  role: "admin" | "member"
+): Promise<ActionResult<{ inviteLink: string; token: string }>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { data, error } = await supabase.rpc("orat_create_organization_invitation", {
+    p_organization_id: organizationId,
+    p_email: email.trim(),
+    p_role: role,
+  });
+
+  if (error) return { error: error.message };
+
+  const out = data as { error?: string; id?: string; token?: string } | null;
+  if (out && typeof out === "object" && "error" in out && typeof out.error === "string") {
+    return { error: out.error };
+  }
+  if (!out || typeof out.token !== "string") return { error: "Failed to create invitation" };
+
+  let base = "";
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    base = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  } else if (process.env.VERCEL_URL) {
+    base = `https://${process.env.VERCEL_URL}`;
+  }
+  const inviteLink = base ? `${base}/invite/${out.token}` : `/invite/${out.token}`;
+
+  if (process.env.NODE_ENV !== "test") {
+    console.info("[Invite] Created invitation link for", email, ":", inviteLink);
+  }
+
+  return { data: { inviteLink, token: out.token } };
+}
+
+/** Accept an organization invitation by token. Call after auth; marks invite accepted and adds user to org. */
+export async function acceptInvitation(
+  token: string
+): Promise<ActionResult<{ ok: true }>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { data, error } = await supabase.rpc("orat_accept_organization_invitation", {
+    p_token: token?.trim() ?? "",
+  });
+
+  if (error) return { error: error.message };
+
+  const out = data as { error?: string; ok?: boolean } | null;
+  if (out && typeof out === "object" && "error" in out && typeof out.error === "string") {
+    return { error: out.error };
+  }
+  if (out && typeof out === "object" && out.ok) return { data: { ok: true } };
+  return { error: "Invalid invitation" };
 }
 
 export async function ensureProfile(userId: string): Promise<ActionResult<null>> {

@@ -42,8 +42,8 @@ function LoginForm() {
         setError(signInError.message);
         return;
       }
-      // Full page redirect so the next request sends auth cookies to the server
-      window.location.href = "/orat";
+      const redirectTo = searchParams.get("redirect") || "/orat";
+      window.location.href = redirectTo.startsWith("/") ? redirectTo : "/orat";
       return;
     } catch (err) {
       const message =
