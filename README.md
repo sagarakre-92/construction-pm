@@ -111,6 +111,35 @@ Without Supabase configured, the app still runs; `/orat` will show a loading or 
 
 ---
 
+## For AI coding agents
+
+This repo is set up to be productive with AI coding agents (Cursor, Codex,
+Claude Code, etc.). Before starting any task, an agent should read:
+
+- **[AGENTS.md](./AGENTS.md)** — the canonical project briefing: what this app is,
+  the stack, repo map, conventions, anti-patterns, and required reading per task.
+- **[.cursor/rules/](./.cursor/rules/)** — file-scoped rules auto-loaded by Cursor:
+  - `nextjs-conventions.mdc` (always-on) — App Router + Server Actions
+  - `supabase-conventions.mdc` — RLS, RPC, migrations
+  - `ui-conventions.mdc` — Tailwind, Radix, CVA
+- **[.cursor/skills/](./.cursor/skills/)** — agent-triggered playbooks:
+  - `add-supabase-migration/` — schema changes done correctly (with RLS)
+  - `add-task-view/` — new task view alongside Board/List/Gantt
+  - `add-shadcn-component/` — new UI primitive in our style
+  - `write-e2e-test/` — Playwright spec in this repo's idiom
+  - `tdd/` — red-green-refactor TDD workflow ([Matt Pocock](https://github.com/mattpocock/skills))
+
+External skills are installed with `npx skills add <repo>/<skill>` and
+tracked in [`skills-lock.json`](./skills-lock.json). The files live in
+`.agents/skills/` (single source of truth); `.cursor/skills/<name>` is a
+symlink so Cursor finds them. Run `npx skills update` to upgrade.
+
+`AGENTS.md` is the cross-tool standard read by Cursor, Codex, and others.
+`.cursor/rules` and `.cursor/skills` are Cursor-native; if you also use Claude
+Code or Copilot, they will fall back to `AGENTS.md`.
+
+---
+
 ## Connecting GitHub, Vercel, Supabase & Sentry
 
 - **Existing accounts:** See **[CONNECT.md](./CONNECT.md)** for wiring this repo to GitHub, Vercel, Supabase, and Sentry.

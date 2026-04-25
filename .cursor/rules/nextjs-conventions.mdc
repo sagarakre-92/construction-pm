@@ -1,0 +1,65 @@
+---
+description: Next.js 15 App Router + Server Actions conventions for ORAT
+alwaysApply: true
+---
+
+# Next.js / App Router conventions
+
+## Component model
+
+- **Default to Server Components.** Only add `"use client"` when the file
+  needs `useState`/`useEffect`, browser APIs, event handlers, or Radix UI
+  components that require it.
+- A `"use client"` directive must be the **first line** of the file, above
+  imports.
+- Don't import server-only modules (`@/lib/supabase/server`, `next/headers`,
+  server actions' internals) into client components.
+
+## Data flow
+
+- **Mutations = Server Actions.** Define them in `src/app/orat/actions.ts`
+  (or a colocated `actions.ts` for a new route segment). The first line of
+  every action file must be `"use server";`.
+- **Reads = Server Components** that call helpers from
+  `src/app/orat/lib/org-data.ts`. Don't fetch from a client `useEffect` if a
+  server component can render the data.
+- **Never** create a `src/app/api/*` route handler for something a server
+  action can do. Route handlers are reserved for webhooks, OAuth callbacks,
+  and external integrations.
+
+## Server-action shape
+
+```typescript
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import type { ActionResult } from "./lib/org-data";
+
+export async function doThing(input: string): Promise<ActionResult<{ id: string }>> {
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const trimmed = input?.trim() ?? "";
+  if (!trimmed) return { error: "Input is required" };
+
+  // …org-scoped work via lib/org-data helpers…
+  return { data: { id: "…" } };
+}
+```
+
+- Always return `ActionResult<T>` (`{ data } | { error }`) — never throw to
+  the client.
+- Validate inputs at the top; return `{ error }` strings the UI can render.
+
+## Imports
+
+- Use the `@/` alias (e.g. `@/components/ui/button`, `@/lib/supabase/server`).
+- **Never** use `../../../` style relative imports across feature boundaries.
+
+## Routing
+
+- Protected app: anything under `src/app/orat/` requires auth (enforced by
+  `middleware.ts` + the page-level session check).
+- Don't add new top-level route groups without a reason — prefer nesting
+  under `orat/` for in-app features.

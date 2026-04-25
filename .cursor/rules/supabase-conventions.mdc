@@ -1,0 +1,102 @@
+---
+description: Supabase, RLS, RPC, and migration conventions for ORAT
+globs: supabase/**,**/lib/supabase/**,**/orat/lib/**,**/orat/actions.ts
+alwaysApply: false
+---
+
+# Supabase conventions
+
+## The org-data layer is the only legal entry point
+
+All project/task/member queries from app code MUST go through
+`src/app/orat/lib/org-data.ts`. Never write a `from("orat_projects")` or
+`from("orat_tasks")` query directly in a component, page, or new server
+action — extend `org-data.ts` instead.
+
+The helpers there (`getProjectsForOrganization`, `getTasksForProject`,
+`ensureProjectInCurrentOrg`, `ensureTaskInCurrentOrg`, etc.) enforce the
+`organization_id` filter that RLS also enforces. App-level scoping is the
+belt; RLS is the suspenders. Both must be present.
+
+## Migrations
+
+- Path: `supabase/migrations/NNN_short_name.sql`
+- `NNN` = next available 3-digit number (current highest + 1, zero-padded).
+- Make migrations **idempotent** wherever practical:
+  - `create table if not exists`
+  - `add column if not exists`
+  - `create or replace function`
+  - `drop policy if exists … ; create policy …`
+- One migration = one logical change. Prefer many small migrations over one
+  large one.
+
+## RLS — required for every new table
+
+Template:
+
+```sql
+alter table public.my_table enable row level security;
+
+create policy "members can read my_table"
+  on public.my_table for select
+  using (
+    organization_id in (
+      select organization_id
+      from public.organization_members
+      where user_id = auth.uid()
+    )
+  );
+```
+
+- Always include `organization_id uuid not null references public.organizations(id)`.
+- Explicit policies for `select`, `insert`, `update`, `delete` — don't rely on
+  defaults.
+- See migrations `010_authorization_org_aware.sql` and
+  `011_rls_organization_ownership.sql` for the canonical patterns.
+
+## RPCs (`security definer` functions)
+
+```sql
+create or replace function public.orat_do_thing(p_org_id uuid, p_value text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    return jsonb_build_object('error', 'Not authenticated');
+  end if;
+
+  -- Membership check before doing anything privileged.
+  if not exists (
+    select 1 from public.organization_members
+    where organization_id = p_org_id and user_id = v_uid
+  ) then
+    return jsonb_build_object('error', 'Not a member of this organization');
+  end if;
+
+  -- …work…
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+grant execute on function public.orat_do_thing(uuid, text) to authenticated;
+```
+
+- Always `security definer` + `set search_path = public, auth`.
+- Always check `auth.uid()` first.
+- Always re-check organization membership; never trust the caller-supplied
+  org id.
+- Return `jsonb` with either `{ "error": "…" }` or a success object.
+- Always `grant execute … to authenticated` at the bottom.
+
+## Client creation
+
+- **Server Components / Server Actions / Route Handlers** →
+  `import { createClient } from "@/lib/supabase/server"` (async).
+- **Client Components** → `import { createClient } from "@/lib/supabase/client"`.
+- **Middleware** → already wired in `src/lib/supabase/middleware.ts`; don't
+  create new clients there.

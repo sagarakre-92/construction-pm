@@ -1,0 +1,85 @@
+---
+description: UI conventions — Tailwind, Radix, shadcn-style primitives, CVA
+globs: src/components/**,src/app/**/*.tsx
+alwaysApply: false
+---
+
+# UI conventions
+
+## Stack
+
+- **Tailwind CSS 3** (no styled-components, Emotion, sass, or CSS modules).
+- **Radix UI** primitives wrapped shadcn-style in `src/components/ui/`.
+- **`class-variance-authority` (CVA)** for variants.
+- **`lucide-react`** for icons. No other icon libraries.
+- **`sonner`** for toasts (`import { toast } from "sonner"`).
+
+## The `cn()` helper is mandatory
+
+Always merge classes with `cn()` from `@/lib/utils`:
+
+```tsx
+import { cn } from "@/lib/utils";
+
+<div className={cn("rounded-md p-4", isError && "bg-red-50", className)} />
+```
+
+Never concatenate class strings manually with `+` or template literals.
+
+## New UI primitives — copy `button.tsx`
+
+When adding a new primitive in `src/components/ui/`:
+
+```tsx
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/utils";
+
+const fooVariants = cva("base-classes-here", {
+  variants: {
+    variant: { default: "…", outline: "…" },
+    size: { default: "…", sm: "…" },
+  },
+  defaultVariants: { variant: "default", size: "default" },
+});
+
+export interface FooProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof fooVariants> {}
+
+const Foo = React.forwardRef<HTMLDivElement, FooProps>(
+  ({ className, variant, size, ...props }, ref) => (
+    <div ref={ref} className={cn(fooVariants({ variant, size, className }))} {...props} />
+  )
+);
+Foo.displayName = "Foo";
+
+export { Foo, fooVariants };
+```
+
+## Color tokens
+
+Use the project's named tokens, not raw hex:
+- `bg-primary-600`, `hover:bg-primary-700`, `focus-visible:ring-primary-500`
+- `bg-slate-50` / `slate-300` / `slate-800` for neutrals
+- `bg-red-600` for destructive
+- Dark mode via `dark:` prefix (already wired in `tailwind.config.ts`)
+
+## Forms
+
+- Labels via `<Label>` from `@/components/ui/label` (Radix-backed).
+- Inputs via `@/components/ui/input` / `textarea` / `select`.
+- Validation errors render inline below the field; never use `alert()`.
+
+## Dialogs
+
+- Use `@/components/ui/dialog` (Radix Dialog wrapper). See `TaskDialog.tsx`,
+  `CreateProjectDialog.tsx` for the open/close pattern with `useState`.
+
+## Accessibility
+
+- Use semantic elements (`<button>`, `<a>`, `<nav>`, `<main>`) — not `<div>`
+  with `onClick`.
+- Every icon-only button needs an `aria-label`.
+- Playwright tests rely on `getByLabel` / `getByRole` — keep accessible
+  names stable.
