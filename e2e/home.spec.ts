@@ -4,7 +4,7 @@ test.describe("Home page", () => {
   test("shows app title and auth links", async ({ page }) => {
     await page.goto("/");
     await expect(
-      page.getByRole("heading", { name: /construction pm/i })
+      page.getByRole("heading", { name: /owner.?s rep action tracker/i })
     ).toBeVisible();
     await expect(page.getByRole("link", { name: /log in/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /sign up/i })).toBeVisible();

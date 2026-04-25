@@ -1,14 +1,19 @@
 import type { Task, TaskStatus } from "../types";
 
-const TODAY = new Date().toISOString().slice(0, 10);
-
-export function isOverdue(task: Task): boolean {
-  return task.currentDueDate < TODAY && task.status !== "Complete";
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-export function getEffectiveStatus(task: Task): TaskStatus {
+export function isOverdue(task: Task, today: string = todayIso()): boolean {
+  return task.currentDueDate < today && task.status !== "Complete";
+}
+
+export function getEffectiveStatus(
+  task: Task,
+  today: string = todayIso()
+): TaskStatus {
   if (task.status === "Complete") return "Complete";
-  if (task.currentDueDate < TODAY) return "Overdue";
+  if (task.currentDueDate < today) return "Overdue";
   return task.status;
 }
 
