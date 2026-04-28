@@ -8,7 +8,13 @@ import type { Task, TaskStatus } from "../types";
 import { getEffectiveStatus, getStatusBadgeVariant, formatDate } from "../utils/task-utils";
 import { cn } from "@/lib/utils";
 
-const COLUMNS: { status: TaskStatus; title: string }[] = [
+// "Overdue" is a virtual swimlane: it is a derived view of any task whose
+// effective status is Overdue, regardless of the task's stored status. Cards
+// can be dragged OUT of Overdue (which sets the destination column's stored
+// status); dropping ONTO Overdue is a no-op because Overdue is not a stored
+// status.
+const COLUMNS: { status: TaskStatus; title: string; virtual?: boolean }[] = [
+  { status: "Overdue", title: "Overdue", virtual: true },
   { status: "Not Started", title: "Not Started" },
   { status: "In Progress", title: "In Progress" },
   { status: "Complete", title: "Complete" },
@@ -45,6 +51,8 @@ export function KanbanView({
   const handleDropOnColumn = useCallback(
     (e: React.DragEvent, columnStatus: TaskStatus) => {
       e.preventDefault();
+      // Overdue is derived, not stored — refuse status changes onto it.
+      if (columnStatus === "Overdue") return;
       const taskId = e.dataTransfer.getData("taskId");
       if (taskId) onStatusChange(taskId, columnStatus);
     },
@@ -70,7 +78,7 @@ export function KanbanView({
                 ...without.slice(insertIdx).map((t) => t.id),
               ];
         onReorder(columnStatus, orderedIds);
-      } else {
+      } else if (columnStatus !== "Overdue") {
         onStatusChange(taskId, columnStatus);
       }
     },
@@ -83,7 +91,11 @@ export function KanbanView({
     e.dataTransfer.dropEffect = "move";
   }, []);
 
-  const   tasksByColumn = COLUMNS.map((col) => ({
+  // getEffectiveStatus returns "Overdue" for any past-due, non-complete task,
+  // so filtering each column by `getEffectiveStatus(t) === col.status` is
+  // enough: Overdue tasks land in the Overdue lane only and disappear from
+  // Not Started / In Progress automatically.
+  const tasksByColumn = COLUMNS.map((col) => ({
     ...col,
     tasks: tasks
       .filter((t) => getEffectiveStatus(t) === col.status)
@@ -91,16 +103,32 @@ export function KanbanView({
   }));
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible md:pb-0">
-      {tasksByColumn.map(({ status, title, tasks: columnTasks }) => (
+    <div className="flex gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:overflow-visible md:pb-0 lg:grid-cols-4">
+      {tasksByColumn.map(({ status, title, tasks: columnTasks, virtual }) => (
         <div
           key={status}
-          className="flex min-w-[260px] flex-col shrink-0 rounded-lg border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/30 md:min-w-0"
+          data-board-column={status}
+          className={cn(
+            "flex min-w-[260px] flex-col shrink-0 rounded-lg border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/30 md:min-w-0",
+            virtual && status === "Overdue" && "border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20"
+          )}
           onDrop={(e) => handleDropOnColumn(e, status)}
           onDragOver={handleDragOver}
         >
-          <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-            <h3 className="font-semibold text-slate-900 dark:text-white">{title}</h3>
+          <div
+            className={cn(
+              "border-b border-slate-200 px-4 py-3 dark:border-slate-700",
+              virtual && status === "Overdue" && "border-red-200 dark:border-red-900/40"
+            )}
+          >
+            <h3
+              className={cn(
+                "font-semibold text-slate-900 dark:text-white",
+                virtual && status === "Overdue" && "text-red-700 dark:text-red-400"
+              )}
+            >
+              {title}
+            </h3>
             <span className="text-xs text-slate-500 dark:text-slate-400">
               {columnTasks.length} task{columnTasks.length !== 1 ? "s" : ""}
             </span>
@@ -121,7 +149,8 @@ export function KanbanView({
                     onClick={() => onTaskClick(task)}
                     className={cn(
                       "cursor-grab rounded-lg border bg-white p-3 shadow-sm transition-shadow active:cursor-grabbing hover:shadow dark:bg-slate-800",
-                      effective === "Overdue" && "border-red-200 dark:border-red-900/50"
+                      effective === "Overdue" &&
+                        "border-l-4 border-red-500 border-y-red-200 border-r-red-200 dark:border-red-500 dark:border-y-red-900/50 dark:border-r-red-900/50"
                     )}
                   >
                     <div className="flex items-start gap-2">
