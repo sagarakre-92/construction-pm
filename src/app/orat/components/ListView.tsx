@@ -4,11 +4,21 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "./EmptyState";
+import { PriorityBadge } from "./PriorityBadge";
 import type { Task } from "../types";
+import { TASK_PRIORITY_ORDER } from "../types";
 import { getEffectiveStatus, getStatusBadgeVariant, formatDate } from "../utils/task-utils";
 import { ArrowUpDown } from "lucide-react";
 
-type SortKey = "title" | "assignedTo" | "company" | "startDate" | "dueDate" | "status" | "project";
+type SortKey =
+  | "title"
+  | "assignedTo"
+  | "company"
+  | "startDate"
+  | "dueDate"
+  | "status"
+  | "priority"
+  | "project";
 
 interface ListViewProps {
   tasks: Task[];
@@ -60,6 +70,10 @@ export function ListView({
         break;
       case "status":
         cmp = getEffectiveStatus(a).localeCompare(getEffectiveStatus(b));
+        break;
+      case "priority":
+        // Lower index = higher priority. Ascending sort surfaces High first.
+        cmp = TASK_PRIORITY_ORDER[a.priority] - TASK_PRIORITY_ORDER[b.priority];
         break;
       case "project":
         cmp = (a.projectName ?? "").localeCompare(b.projectName ?? "");
@@ -115,6 +129,9 @@ export function ListView({
             <th className="px-4 py-3 text-left">
               <Th sortKey="status">Status</Th>
             </th>
+            <th className="px-4 py-3 text-left">
+              <Th sortKey="priority">Priority</Th>
+            </th>
             {showProjectColumn && (
               <th className="px-4 py-3 text-left">
                 <Th sortKey="project">Project</Th>
@@ -154,6 +171,9 @@ export function ListView({
                 </td>
                 <td className="px-4 py-3">
                   <Badge variant={getStatusBadgeVariant(effective)}>{effective}</Badge>
+                </td>
+                <td className="px-4 py-3">
+                  <PriorityBadge priority={task.priority} />
                 </td>
                 {showProjectColumn && (
                   <td className="px-4 py-3 text-slate-600 dark:text-slate-400">

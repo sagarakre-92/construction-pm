@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Task, TaskStatus, Project, InternalUser } from "../types";
+import type { Task, TaskStatus, TaskPriority, Project, InternalUser } from "../types";
+import { taskPriorityOptions } from "../types";
 import { formatDate } from "../utils/task-utils";
 import { Trash2 } from "lucide-react";
 
@@ -70,6 +71,7 @@ export function TaskDialog({
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [status, setStatus] = useState<TaskStatus>("Not Started");
+  const [priority, setPriority] = useState<TaskPriority>("medium");
   const [meetingReference, setMeetingReference] = useState("");
 
   const options = getAssigneeOptions(project, internalUsers);
@@ -85,6 +87,7 @@ export function TaskDialog({
       setStartDate(task.startDate);
       setDueDate(task.currentDueDate);
       setStatus(task.status);
+      setPriority(task.priority ?? "medium");
       setMeetingReference(task.meetingReference ?? "");
     } else if (mode === "create") {
       const today = new Date().toISOString().slice(0, 10);
@@ -97,6 +100,7 @@ export function TaskDialog({
       setStartDate(today);
       setDueDate(today);
       setStatus("Not Started");
+      setPriority("medium");
       setMeetingReference("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync when open/task/mode change; including project/internalUsers would reset form on every keystroke
@@ -121,6 +125,7 @@ export function TaskDialog({
         currentDueDate: dueDate,
         originalDueDate: task.originalDueDate,
         status,
+        priority,
         meetingReference: meetingReference.trim() || undefined,
         history: [
           ...task.history,
@@ -138,6 +143,7 @@ export function TaskDialog({
         originalDueDate: dueDate,
         currentDueDate: dueDate,
         status,
+        priority,
         meetingReference: meetingReference.trim() || undefined,
         projectId: project.id,
         projectName: project.name,
@@ -232,6 +238,21 @@ export function TaskDialog({
                 {STATUS_OPTIONS.map((s) => (
                   <SelectItem key={s} value={s}>
                     {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="task-priority">Priority</Label>
+            <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
+              <SelectTrigger id="task-priority" aria-label="Priority">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {taskPriorityOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>

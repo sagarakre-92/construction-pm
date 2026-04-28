@@ -11,7 +11,22 @@ import type {
   Organization,
   ExternalStakeholder,
   TaskStatus,
+  TaskPriority,
 } from "../types";
+
+const VALID_PRIORITIES: ReadonlySet<TaskPriority> = new Set([
+  "high",
+  "medium",
+  "low",
+]);
+
+/** Coerce a value from the DB into a valid TaskPriority, defaulting to 'medium'. */
+function coercePriority(value: unknown): TaskPriority {
+  if (typeof value === "string" && VALID_PRIORITIES.has(value as TaskPriority)) {
+    return value as TaskPriority;
+  }
+  return "medium";
+}
 
 export type ActionResult<T> = { data: T } | { error: string };
 
@@ -339,6 +354,7 @@ export async function getProjectsForOrganization(
       originalDueDate: dateOnly(t.original_due_date),
       currentDueDate: dateOnly(t.current_due_date),
       status: (t.status as TaskStatus) ?? "Not Started",
+      priority: coercePriority((t as { priority?: unknown }).priority),
       sortOrder: (t as { sort_order?: number }).sort_order ?? 0,
       meetingReference: t.meeting_reference ?? undefined,
       projectId: t.project_id,
@@ -491,6 +507,7 @@ export async function getTasksForProject(
       originalDueDate: dateOnly(t.original_due_date),
       currentDueDate: dateOnly(t.current_due_date),
       status: (t.status as TaskStatus) ?? "Not Started",
+      priority: coercePriority((t as { priority?: unknown }).priority),
       sortOrder: (t as { sort_order?: number }).sort_order ?? 0,
       meetingReference: t.meeting_reference ?? undefined,
       projectId: t.project_id,

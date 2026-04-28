@@ -6,7 +6,21 @@ import type {
   Task,
   InternalUser,
   TaskStatus,
+  TaskPriority,
 } from "./types";
+
+const VALID_PRIORITIES: ReadonlySet<TaskPriority> = new Set([
+  "high",
+  "medium",
+  "low",
+]);
+
+function coercePriority(value: unknown): TaskPriority {
+  if (typeof value === "string" && VALID_PRIORITIES.has(value as TaskPriority)) {
+    return value as TaskPriority;
+  }
+  return "medium";
+}
 import {
   createProjectForOrganization,
   ensureProjectInCurrentOrg,
@@ -361,6 +375,8 @@ export async function createTask(
     data.assignedTo
   );
 
+  const priority = coercePriority(data.priority);
+
   const { data: row, error } = await supabase
     .from("orat_tasks")
     .insert({
@@ -376,6 +392,7 @@ export async function createTask(
       original_due_date: data.originalDueDate,
       current_due_date: data.currentDueDate,
       status: data.status,
+      priority,
       sort_order: 0,
       meeting_reference: data.meetingReference ?? null,
       history: data.history ?? [],
@@ -397,6 +414,7 @@ export async function createTask(
     originalDueDate: dateOnly(row.original_due_date),
     currentDueDate: dateOnly(row.current_due_date),
     status: (row.status as TaskStatus) ?? "Not Started",
+    priority: coercePriority((row as { priority?: unknown }).priority),
     sortOrder: (row as { sort_order?: number }).sort_order ?? 0,
     meetingReference: row.meeting_reference ?? undefined,
     projectId: row.project_id,
@@ -433,6 +451,7 @@ export async function updateTask(task: Task): Promise<ActionResult<null>> {
     start_date: task.startDate,
     current_due_date: task.currentDueDate,
     status: task.status,
+    priority: coercePriority(task.priority),
     meeting_reference: task.meetingReference ?? null,
     history: task.history ?? [],
   };

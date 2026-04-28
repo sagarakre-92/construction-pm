@@ -16,6 +16,7 @@ import {
   ensureTaskInCurrentOrg,
 } from "./org-data";
 import {
+  createTask,
   updateProject,
   updateTask,
   updateTaskStatus,
@@ -112,6 +113,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     originalDueDate: "2025-01-10",
     currentDueDate: "2025-01-12",
     status: "In Progress",
+    priority: "medium",
     sortOrder: 3,
     meetingReference: undefined,
     projectId: PROJECT_ID,
@@ -525,6 +527,175 @@ describe("org-data: organization-aware foundations", () => {
       }
       // Reject must short-circuit BEFORE writing sort_order.
       expect(lastUpdatePayload(fake, "orat_tasks")).toBeUndefined();
+    });
+  });
+
+  describe("task priority", () => {
+    it("getTasksForProject maps priority from row, defaulting to 'medium' when null", async () => {
+      await installFake({
+        tables: {
+          orat_tasks: [
+            {
+              id: "t-with-prio",
+              project_id: PROJECT_ID,
+              organization_id: ORG_A,
+              title: "T1",
+              description: null,
+              assigned_to_user_id: USER_ID,
+              assigned_to_external_id: null,
+              company: "",
+              created_date: "2025-01-01",
+              start_date: "2025-01-02",
+              original_due_date: "2025-01-10",
+              current_due_date: "2025-01-12",
+              status: "In Progress",
+              priority: "high",
+              sort_order: 0,
+              history: [],
+            },
+            {
+              id: "t-no-prio",
+              project_id: PROJECT_ID,
+              organization_id: ORG_A,
+              title: "T2",
+              description: null,
+              assigned_to_user_id: USER_ID,
+              assigned_to_external_id: null,
+              company: "",
+              created_date: "2025-01-01",
+              start_date: "2025-01-02",
+              original_due_date: "2025-01-10",
+              current_due_date: "2025-01-12",
+              status: "Not Started",
+              priority: null,
+              sort_order: 0,
+              history: [],
+            },
+          ],
+        },
+      });
+
+      const res = await getTasksForProject(PROJECT_ID, ORG_A);
+
+      expect("data" in res).toBe(true);
+      if ("data" in res) {
+        const byId = new Map(res.data.map((t) => [t.id, t]));
+        expect(byId.get("t-with-prio")?.priority).toBe("high");
+        expect(byId.get("t-no-prio")?.priority).toBe("medium");
+      }
+    });
+
+    it("updateTask round-trips priority into the orat_tasks update payload", async () => {
+      const fake = await installFake({
+        rpc: { orat_user_organization_id: ORG_A },
+        tables: {
+          organizations: [{ id: ORG_A, name: "Org A", slug: "org-a" }],
+          orat_projects: [{ id: PROJECT_ID, organization_id: ORG_A }],
+          orat_external_stakeholders: [],
+        },
+      });
+
+      const res = await updateTask(makeTask({ priority: "high" }));
+
+      expect(res).toEqual({ data: null });
+      const payload = lastUpdatePayload(fake, "orat_tasks");
+      expect(payload?.priority).toBe("high");
+    });
+
+    it("createTask sends 'medium' as the default priority when caller does not specify one", async () => {
+      const NEW_TASK_ID = "task-new-uuid";
+      const fake = await installFake({
+        rpc: { orat_user_organization_id: ORG_A },
+        tables: {
+          organizations: [{ id: ORG_A, name: "Org A", slug: "org-a" }],
+          orat_projects: [{ id: PROJECT_ID, organization_id: ORG_A }],
+          orat_external_stakeholders: [],
+          orat_tasks: [
+            {
+              id: NEW_TASK_ID,
+              project_id: PROJECT_ID,
+              organization_id: ORG_A,
+              title: "New",
+              description: null,
+              assigned_to_user_id: USER_ID,
+              assigned_to_external_id: null,
+              company: "",
+              created_date: "2025-01-01",
+              start_date: "2025-01-02",
+              original_due_date: "2025-01-10",
+              current_due_date: "2025-01-12",
+              status: "Not Started",
+              priority: "medium",
+              sort_order: 0,
+              history: [],
+            },
+          ],
+        },
+      });
+
+      const baseTask = makeTask({ id: NEW_TASK_ID, title: "New" });
+      const { id: _id, projectId: _projectId, ...rest } = baseTask;
+      void _id;
+      void _projectId;
+      const taskInput = { ...rest, priority: "medium" as const };
+
+      const res = await createTask(PROJECT_ID, taskInput);
+
+      expect("data" in res).toBe(true);
+      if ("data" in res) {
+        expect(res.data.priority).toBe("medium");
+      }
+      const inserts = insertPayloads(fake, "orat_tasks");
+      expect(inserts.length).toBeGreaterThan(0);
+      const lastInsert = inserts[inserts.length - 1] as Record<string, unknown>;
+      expect(lastInsert.priority).toBe("medium");
+    });
+
+    it("createTask passes through an explicit 'high' priority into the insert payload", async () => {
+      const NEW_TASK_ID = "task-new-uuid-2";
+      const fake = await installFake({
+        rpc: { orat_user_organization_id: ORG_A },
+        tables: {
+          organizations: [{ id: ORG_A, name: "Org A", slug: "org-a" }],
+          orat_projects: [{ id: PROJECT_ID, organization_id: ORG_A }],
+          orat_external_stakeholders: [],
+          orat_tasks: [
+            {
+              id: NEW_TASK_ID,
+              project_id: PROJECT_ID,
+              organization_id: ORG_A,
+              title: "Urgent",
+              description: null,
+              assigned_to_user_id: USER_ID,
+              assigned_to_external_id: null,
+              company: "",
+              created_date: "2025-01-01",
+              start_date: "2025-01-02",
+              original_due_date: "2025-01-10",
+              current_due_date: "2025-01-12",
+              status: "Not Started",
+              priority: "high",
+              sort_order: 0,
+              history: [],
+            },
+          ],
+        },
+      });
+
+      const baseTask = makeTask({ id: NEW_TASK_ID, title: "Urgent", priority: "high" });
+      const { id: _id, projectId: _projectId, ...rest } = baseTask;
+      void _id;
+      void _projectId;
+
+      const res = await createTask(PROJECT_ID, rest);
+
+      expect("data" in res).toBe(true);
+      if ("data" in res) {
+        expect(res.data.priority).toBe("high");
+      }
+      const inserts = insertPayloads(fake, "orat_tasks");
+      const lastInsert = inserts[inserts.length - 1] as Record<string, unknown>;
+      expect(lastInsert.priority).toBe("high");
     });
   });
 
