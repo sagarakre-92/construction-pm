@@ -14,6 +14,10 @@ import {
   createProjectForOrganization,
   ensureProjectInCurrentOrg,
   ensureTaskInCurrentOrg,
+  createProjectInvitation,
+  acceptProjectInvitation,
+  listProjectPendingInvitations,
+  getProjectRole,
 } from "./org-data";
 import {
   updateProject,
@@ -563,6 +567,209 @@ describe("org-data: organization-aware foundations", () => {
       if ("error" in res) {
         expect(res.error).toMatch(/not in your organization/i);
       }
+    });
+  });
+
+  describe("project-scoped invitations", () => {
+    describe("createProjectInvitation", () => {
+      it("calls orat_create_project_invitation RPC with the project id, email and role", async () => {
+        const fake = await installFake({
+          rpc: {
+            orat_create_project_invitation: {
+              data: { id: "inv-1", token: "tok-abc" },
+              error: null,
+            },
+          },
+        });
+
+        const res = await createProjectInvitation(
+          PROJECT_ID,
+          "Pat@Example.com",
+          "Pat",
+          "Smith",
+          "Project Manager",
+          "editor",
+        );
+
+        expect("data" in res).toBe(true);
+        if ("data" in res) {
+          expect(res.data.token).toBe("tok-abc");
+          expect(res.data.inviteLink).toContain("/invite/tok-abc");
+        }
+        const rpcCall = fake.calls.rpc?.find(
+          (c: ChainCall) => c.args[0] === "orat_create_project_invitation",
+        );
+        expect(rpcCall).toBeDefined();
+        const args = rpcCall?.args[1] as Record<string, unknown>;
+        expect(args.p_project_id).toBe(PROJECT_ID);
+        expect(args.p_email).toBe("pat@example.com");
+        expect(args.p_first_name).toBe("Pat");
+        expect(args.p_last_name).toBe("Smith");
+        expect(args.p_title).toBe("Project Manager");
+        expect(args.p_project_role).toBe("editor");
+      });
+
+      it("propagates RPC-level errors (e.g. 'Not authorized to invite to this project')", async () => {
+        await installFake({
+          rpc: {
+            orat_create_project_invitation: {
+              data: { error: "Not authorized to invite to this project" },
+              error: null,
+            },
+          },
+        });
+
+        const res = await createProjectInvitation(
+          PROJECT_ID,
+          "pat@example.com",
+          "",
+          "",
+          "",
+          "viewer",
+        );
+
+        expect("error" in res).toBe(true);
+        if ("error" in res) {
+          expect(res.error).toMatch(/not authorized/i);
+        }
+      });
+
+      it("rejects when not signed in", async () => {
+        await installFake({ session: null });
+
+        const res = await createProjectInvitation(
+          PROJECT_ID,
+          "pat@example.com",
+          "",
+          "",
+          "",
+          "editor",
+        );
+
+        expect("error" in res).toBe(true);
+        if ("error" in res) {
+          expect(res.error).toMatch(/not authenticated/i);
+        }
+      });
+    });
+
+    describe("acceptProjectInvitation", () => {
+      it("calls the orat_accept_project_invitation RPC with the trimmed token", async () => {
+        const fake = await installFake({
+          rpc: {
+            orat_accept_project_invitation: {
+              data: {
+                ok: true,
+                project_id: PROJECT_ID,
+                organization_id: ORG_A,
+              },
+              error: null,
+            },
+          },
+        });
+
+        const res = await acceptProjectInvitation("  tok-xyz  ");
+
+        expect("data" in res).toBe(true);
+        if ("data" in res) {
+          expect(res.data.projectId).toBe(PROJECT_ID);
+          expect(res.data.organizationId).toBe(ORG_A);
+        }
+        const rpcCall = fake.calls.rpc?.find(
+          (c: ChainCall) => c.args[0] === "orat_accept_project_invitation",
+        );
+        expect(rpcCall).toBeDefined();
+        const args = rpcCall?.args[1] as Record<string, unknown>;
+        expect(args.p_token).toBe("tok-xyz");
+      });
+
+      it("returns the RPC error for revoked or expired invitations", async () => {
+        await installFake({
+          rpc: {
+            orat_accept_project_invitation: {
+              data: { error: "This invitation has expired" },
+              error: null,
+            },
+          },
+        });
+
+        const res = await acceptProjectInvitation("expired-tok");
+
+        expect("error" in res).toBe(true);
+        if ("error" in res) {
+          expect(res.error).toMatch(/expired/i);
+        }
+      });
+    });
+
+    describe("listProjectPendingInvitations", () => {
+      it("filters organization_invitations by project_id and pending status", async () => {
+        const fake = await installFake({
+          tables: {
+            organization_invitations: [
+              {
+                id: "inv-1",
+                email: "a@example.com",
+                role: "member",
+                status: "pending",
+                created_at: "2025-01-01T00:00:00Z",
+                expires_at: "2025-01-15T00:00:00Z",
+                first_name: "A",
+                last_name: "B",
+                title: "PM",
+                project_id: PROJECT_ID,
+                project_role: "editor",
+              },
+            ],
+          },
+        });
+
+        const res = await listProjectPendingInvitations(PROJECT_ID);
+
+        expect("data" in res).toBe(true);
+        if ("data" in res) {
+          expect(res.data).toHaveLength(1);
+          expect(res.data[0].projectId).toBe(PROJECT_ID);
+          expect(res.data[0].projectRole).toBe("editor");
+          expect(res.data[0].email).toBe("a@example.com");
+        }
+        expect(eqArg(fake, "project_id")).toBe(PROJECT_ID);
+        expect(eqArg(fake, "status")).toBe("pending");
+      });
+    });
+
+    describe("getProjectRole", () => {
+      it("returns 'editor' when the orat_user_project_role RPC returns 'editor'", async () => {
+        const fake = await installFake({
+          rpc: { orat_user_project_role: "editor" },
+        });
+
+        const role = await getProjectRole(USER_ID, PROJECT_ID);
+
+        expect(role).toBe("editor");
+        const rpcCall = fake.calls.rpc?.find(
+          (c: ChainCall) => c.args[0] === "orat_user_project_role",
+        );
+        expect(rpcCall).toBeDefined();
+        const args = rpcCall?.args[1] as Record<string, unknown>;
+        expect(args.p_project_id).toBe(PROJECT_ID);
+      });
+
+      it("returns 'viewer' when the RPC returns 'viewer'", async () => {
+        await installFake({ rpc: { orat_user_project_role: "viewer" } });
+
+        const role = await getProjectRole(USER_ID, PROJECT_ID);
+
+        expect(role).toBe("viewer");
+      });
+
+      it("returns null when the user has no role on the project", async () => {
+        await installFake({ rpc: { orat_user_project_role: null } });
+
+        const role = await getProjectRole(USER_ID, PROJECT_ID);
+
+        expect(role).toBeNull();
+      });
     });
   });
 });

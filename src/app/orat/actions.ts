@@ -94,6 +94,11 @@ export async function completeOnboarding(
   return { data: { id: orgId } };
 }
 
+// NOTE(orat-pjv): Agent D1 owns `src/lib/email/**` (sendInvitationEmail). Wire-up
+// will land when that module is merged. Until then, invite creation returns the
+// link to the UI which copies it to the clipboard.
+// import { sendInvitationEmail } from "@/lib/email";
+
 /** Create an organization invitation with first name, last name, email, title. Caller must be owner or admin. */
 export async function createInvitation(
   organizationId: string,
@@ -139,28 +144,127 @@ export async function createInvitation(
   return { data: { inviteLink, token: out.token } };
 }
 
-/** Accept an organization invitation by token. Call after auth; marks invite accepted and adds user to org. */
+/**
+ * Result of accepting an invitation. For project-scoped invites, `projectId` and
+ * `organizationId` are populated so the accept page can redirect the invitee
+ * directly into the invited project.
+ */
+export type AcceptInvitationResult = {
+  ok: true;
+  projectId?: string;
+  organizationId?: string;
+};
+
+/**
+ * Accept an invitation by token. Handles BOTH org-wide and project-scoped invites:
+ * tries the project-scoped RPC first; if the invitation isn't project-scoped,
+ * falls back to the existing org-wide accept RPC.
+ */
 export async function acceptInvitation(
   token: string
-): Promise<ActionResult<{ ok: true }>> {
+): Promise<ActionResult<AcceptInvitationResult>> {
   const supabase = await createClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
 
-  const { data, error } = await supabase.rpc("orat_accept_organization_invitation", {
-    p_token: token?.trim() ?? "",
-  });
+  const trimmed = token?.trim() ?? "";
+  if (!trimmed) return { error: "Invalid invitation link" };
 
+  const { data: projData, error: projErr } = await supabase.rpc(
+    "orat_accept_project_invitation",
+    { p_token: trimmed }
+  );
+
+  if (!projErr) {
+    const out = projData as
+      | { error?: string; ok?: boolean; project_id?: string; organization_id?: string }
+      | null;
+    const projectScopedErr =
+      out && typeof out === "object" && typeof out.error === "string"
+        ? out.error
+        : null;
+    const isOrgWide = projectScopedErr === "Not a project-scoped invitation";
+    if (!isOrgWide) {
+      if (projectScopedErr) return { error: projectScopedErr };
+      if (
+        out &&
+        out.ok === true &&
+        typeof out.project_id === "string" &&
+        typeof out.organization_id === "string"
+      ) {
+        return {
+          data: {
+            ok: true,
+            projectId: out.project_id,
+            organizationId: out.organization_id,
+          },
+        };
+      }
+    }
+  }
+
+  const { data, error } = await supabase.rpc("orat_accept_organization_invitation", {
+    p_token: trimmed,
+  });
   if (error) return { error: error.message };
 
   const out = data as { error?: string; ok?: boolean } | null;
-  if (out && typeof out === "object" && "error" in out && typeof out.error === "string") {
+  if (out && typeof out === "object" && typeof out.error === "string") {
     return { error: out.error };
   }
   if (out && typeof out === "object" && out.ok) return { data: { ok: true } };
   return { error: "Invalid invitation" };
+}
+
+/**
+ * Create a project-scoped invitation. Caller must be org owner/admin OR a
+ * project editor on the target project (enforced inside the RPC).
+ */
+export async function inviteToProject(
+  projectId: string,
+  email: string,
+  firstName: string,
+  lastName: string,
+  title: string,
+  projectRole: "editor" | "viewer"
+): Promise<ActionResult<{ inviteLink: string; token: string }>> {
+  const result = await (
+    await import("./lib/org-data")
+  ).createProjectInvitation(
+    projectId,
+    email,
+    firstName,
+    lastName,
+    title,
+    projectRole
+  );
+  if ("error" in result) return result;
+
+  if (process.env.NODE_ENV !== "test") {
+    console.info(
+      "[Invite] Created project-scoped invitation for",
+      email,
+      ":",
+      result.data.inviteLink
+    );
+  }
+
+  // TODO(orat-pjv): once Agent D1 lands `@/lib/email`, replace clipboard fallback
+  // with `await sendInvitationEmail({ to: email, inviteLink: result.data.inviteLink, projectName })`.
+
+  return result;
+}
+
+/** List pending project-scoped invitations for the given project (caller must have read access via RLS). */
+export async function listProjectPendingInvitations(projectId: string) {
+  return (await import("./lib/org-data")).listProjectPendingInvitations(projectId);
+}
+
+/** Returns the current user's effective role on the given project (owner | admin | editor | viewer | null). */
+export async function getProjectRole(userId: string, projectId: string) {
+  return (await import("./lib/org-data")).getProjectRole(userId, projectId);
 }
 
 export async function ensureProfile(userId: string): Promise<ActionResult<null>> {
