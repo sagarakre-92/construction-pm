@@ -1,9 +1,17 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+import { Pencil, Mail, X, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import type { Project, InternalUser } from "../types";
-import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  getCurrentUserOrgRole,
+  listPendingInvitations,
+  resendInvitationEmail,
+  revokeInvitation,
+} from "@/app/orat/actions";
+import type { Project, InternalUser } from "../types";
 
 interface ProjectTeamViewProps {
   project: Project;
@@ -11,8 +19,38 @@ interface ProjectTeamViewProps {
   onEditProject: () => void;
 }
 
+type PendingInvitation = {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  first_name: string;
+  last_name: string;
+  title: string;
+};
+
+type OrgRole = "owner" | "admin" | "member" | null;
+
 function initials(firstName: string, lastName: string) {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+}
+
+function formatSentDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function inviteeDisplayName(inv: PendingInvitation): string {
+  const composed = `${inv.first_name ?? ""} ${inv.last_name ?? ""}`.trim();
+  return composed || inv.email;
 }
 
 export function ProjectTeamView({
@@ -20,8 +58,89 @@ export function ProjectTeamView({
   internalUsers,
   onEditProject,
 }: ProjectTeamViewProps) {
-  const internal = internalUsers.filter((u) => project.internalTeamMembers.includes(u.id));
+  const internal = internalUsers.filter((u) =>
+    project.internalTeamMembers.includes(u.id),
+  );
   const external = project.externalStakeholders;
+
+  const [pending, setPending] = useState<PendingInvitation[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+  const [role, setRole] = useState<OrgRole>(null);
+  const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
+
+  const orgId = project.organizationId;
+
+  const loadPending = useCallback(async () => {
+    if (!orgId) {
+      setPending([]);
+      setPendingLoading(false);
+      return;
+    }
+    setPendingLoading(true);
+    setPendingError(null);
+    const res = await listPendingInvitations(orgId);
+    if ("error" in res) {
+      setPendingError(res.error);
+      setPending([]);
+    } else {
+      setPending(res.data);
+    }
+    setPendingLoading(false);
+  }, [orgId]);
+
+  useEffect(() => {
+    let active = true;
+    loadPending();
+    getCurrentUserOrgRole().then((r) => {
+      if (active) setRole(r);
+    });
+    return () => {
+      active = false;
+    };
+  }, [loadPending]);
+
+  const canManage = role === "owner" || role === "admin";
+
+  const handleResend = useCallback(
+    async (inv: PendingInvitation) => {
+      setBusyInviteId(inv.id);
+      try {
+        const res = await resendInvitationEmail(inv.id);
+        if ("error" in res) {
+          toast.error(res.error);
+          return;
+        }
+        toast.success(`Invitation re-sent to ${inv.email}`);
+        await loadPending();
+      } finally {
+        setBusyInviteId(null);
+      }
+    },
+    [loadPending],
+  );
+
+  const handleRevoke = useCallback(
+    async (inv: PendingInvitation) => {
+      const ok = window.confirm(
+        `Revoke the invitation for ${inv.email}? The link will stop working.`,
+      );
+      if (!ok) return;
+      setBusyInviteId(inv.id);
+      try {
+        const res = await revokeInvitation(inv.id);
+        if ("error" in res) {
+          toast.error(res.error);
+          return;
+        }
+        toast.success(`Invitation for ${inv.email} revoked`);
+        setPending((prev) => prev.filter((p) => p.id !== inv.id));
+      } finally {
+        setBusyInviteId(null);
+      }
+    },
+    [],
+  );
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
@@ -45,7 +164,7 @@ export function ProjectTeamView({
               >
                 <div
                   className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-800 dark:bg-primary-900/30 dark:text-primary-300"
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-800 dark:bg-primary-900/30 dark:text-primary-300",
                   )}
                 >
                   {initials(u.firstName, u.lastName)}
@@ -89,6 +208,72 @@ export function ProjectTeamView({
             )}
           </ul>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Pending invitations
+        </p>
+        {pendingLoading ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
+        ) : pendingError ? (
+          <p className="text-sm text-red-600 dark:text-red-400">{pendingError}</p>
+        ) : pending.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            No pending invitations.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {pending.map((inv) => {
+              const busy = busyInviteId === inv.id;
+              return (
+                <li
+                  key={inv.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-100 p-2 dark:border-slate-700"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-slate-900 dark:text-white">
+                      {inviteeDisplayName(inv)}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {inv.email} · {inv.role} · sent {formatSentDate(inv.created_at)}
+                    </p>
+                  </div>
+                  {canManage && (
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => handleResend(inv)}
+                        aria-label={`Resend invitation to ${inv.email}`}
+                      >
+                        {busy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Mail className="h-4 w-4" />
+                        )}
+                        Resend
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={busy}
+                        onClick={() => handleRevoke(inv)}
+                        aria-label={`Revoke invitation for ${inv.email}`}
+                      >
+                        <X className="h-4 w-4" />
+                        Revoke
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );

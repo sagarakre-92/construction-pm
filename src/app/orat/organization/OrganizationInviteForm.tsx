@@ -37,7 +37,8 @@ export function OrganizationInviteForm({ organizationId }: Props) {
         toast.error(result.error);
         return;
       }
-      toast.success("Invitation created");
+      const sentTo = email.trim();
+      toast.success(`Invitation emailed to ${sentTo}`);
       setFirstName("");
       setLastName("");
       setEmail("");
@@ -49,10 +50,12 @@ export function OrganizationInviteForm({ organizationId }: Props) {
           ? link
           : `${typeof window !== "undefined" ? window.location.origin : ""}${link}`;
       if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(fullLink);
-        toast.info("Invite link copied to clipboard. Send it to the invitee (email not sent yet).");
-      } else {
-        toast.info("Invite link: " + fullLink);
+        try {
+          await navigator.clipboard.writeText(fullLink);
+          toast.info("Invite link also copied to clipboard.");
+        } catch {
+          // Clipboard access can be denied; the email send is what matters.
+        }
       }
     } finally {
       setLoading(false);
