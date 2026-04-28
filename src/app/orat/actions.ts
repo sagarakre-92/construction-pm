@@ -7,6 +7,8 @@ import type {
   InternalUser,
   TaskStatus,
   TaskPriority,
+  SavedView,
+  SavedViewFilters,
 } from "./types";
 
 const VALID_PRIORITIES: ReadonlySet<TaskPriority> = new Set([
@@ -544,4 +546,34 @@ export async function deleteTask(taskId: string): Promise<ActionResult<null>> {
   const { error } = await supabase.from("orat_tasks").delete().eq("id", taskId);
   if (error) return { error: error.message };
   return { data: null };
+}
+
+export async function listSavedViews(): Promise<ActionResult<SavedView[]>> {
+  return (await import("./lib/org-data")).listSavedViews();
+}
+
+export async function getSavedView(
+  viewId: string
+): Promise<ActionResult<SavedView | null>> {
+  return (await import("./lib/org-data")).getSavedView(viewId);
+}
+
+export async function createSavedView(
+  name: string,
+  filters: SavedViewFilters
+): Promise<ActionResult<SavedView>> {
+  return (await import("./lib/org-data")).createSavedView(name, filters);
+}
+
+export async function updateSavedView(
+  viewId: string,
+  patch: { name?: string; filters?: SavedViewFilters }
+): Promise<ActionResult<null>> {
+  return (await import("./lib/org-data")).updateSavedView(viewId, patch);
+}
+
+export async function deleteSavedView(
+  viewId: string
+): Promise<ActionResult<null>> {
+  return (await import("./lib/org-data")).deleteSavedView(viewId);
 }

@@ -79,3 +79,24 @@ export type Project = {
   externalStakeholders: ExternalStakeholder[];
   tasks: Task[];
 };
+
+export interface SavedViewFilters {
+  projectId?: string | null;
+  assigneeFilter?: "all" | "my-tasks" | "internal" | "external";
+  viewMode?: "board" | "list" | "gantt";
+  groupBy?: "none" | "status" | "assignee" | "project" | "due-bucket";
+  status?: string | null;
+  priority?: string | null;
+  dueBucket?: string | null;
+  [key: string]: unknown;
+}
+
+export interface SavedView {
+  id: string;
+  organizationId: string;
+  userId: string;
+  name: string;
+  filters: SavedViewFilters;
+  createdAt: string;
+  updatedAt: string;
+}
