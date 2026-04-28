@@ -14,7 +14,8 @@ import {
   Rectangle,
 } from "recharts";
 import { EmptyState } from "./EmptyState";
-import type { Task } from "../types";
+import type { Task, TaskPriority } from "../types";
+import { formatTaskPriority } from "../types";
 import { getEffectiveStatus, formatDate } from "../utils/task-utils";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -22,6 +23,12 @@ const STATUS_COLORS: Record<string, string> = {
   "In Progress": "#3b82f6",
   Complete: "#22c55e",
   Overdue: "#ef4444",
+};
+
+const PRIORITY_LABEL_COLORS: Record<TaskPriority, string> = {
+  high: "#b91c1c",
+  medium: "#b45309",
+  low: "#475569",
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -115,6 +122,8 @@ export function GanttView({
         fill: STATUS_COLORS[status] ?? "#94a3b8",
         label: `${formatDate(task.startDate)} – ${formatDate(task.currentDueDate)}`,
         ownerLabel: getAssigneeName(task.assignedTo, task.company),
+        priorityLabel: `[${formatTaskPriority(task.priority)}]`,
+        priorityFill: PRIORITY_LABEL_COLORS[task.priority],
       };
     })
     .filter(Boolean) as (Task & {
@@ -126,6 +135,8 @@ export function GanttView({
     fill: string;
     label: string;
     ownerLabel: string;
+    priorityLabel: string;
+    priorityFill: string;
   })[];
 
   data.sort((a, b) => {
@@ -184,6 +195,9 @@ export function GanttView({
                   <p className="text-xs text-slate-500">
                     {p.ownerLabel} · {p.status}
                   </p>
+                  <p className="text-xs text-slate-500">
+                    Priority: {formatTaskPriority(p.priority as TaskPriority)}
+                  </p>
                   <p className="text-xs text-slate-500">{p.label}</p>
                   {showProject && p.projectName && (
                     <p className="text-xs text-slate-500">Project: {p.projectName}</p>
@@ -205,6 +219,14 @@ export function GanttView({
             ))}
             <LabelList dataKey="title" position="insideLeft" offset={4} fontSize={11} fontWeight={500} />
             <LabelList dataKey="ownerLabel" position="insideLeft" offset={4} dy={14} fontSize={10} fill="#64748b" />
+            <LabelList
+              dataKey="priorityLabel"
+              position="insideRight"
+              offset={6}
+              fontSize={10}
+              fontWeight={700}
+              fill="#0f172a"
+            />
           </Bar>
         </BarChart>
       </ResponsiveContainer>

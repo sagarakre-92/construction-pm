@@ -1,5 +1,26 @@
 export type TaskStatus = "Not Started" | "In Progress" | "Complete" | "Overdue";
 
+export type TaskPriority = "high" | "medium" | "low";
+
+/** Stable ordering for sorting (lower index = higher priority). */
+export const TASK_PRIORITY_ORDER: Record<TaskPriority, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+/** UI options for the priority Select. Order matches the dropdown order. */
+export const taskPriorityOptions: { value: TaskPriority; label: string }[] = [
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+];
+
+/** Display label for a stored priority value (title-cased). */
+export function formatTaskPriority(priority: TaskPriority): string {
+  return priority.charAt(0).toUpperCase() + priority.slice(1);
+}
+
 export type Organization = {
   id: string;
   name: string;
@@ -34,6 +55,7 @@ export type Task = {
   originalDueDate: string;
   currentDueDate: string;
   status: TaskStatus;
+  priority: TaskPriority;
   sortOrder?: number;
   meetingReference?: string;
   projectName?: string;
