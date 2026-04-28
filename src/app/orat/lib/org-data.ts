@@ -576,6 +576,7 @@ export async function getTasksForProject(
   return { data: tasks };
 }
 
+type SavedViewRow = {
   id: string;
   organization_id: string;
   user_id: string;
