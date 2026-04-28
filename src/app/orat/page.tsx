@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Settings, Plus, PanelLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -76,10 +77,19 @@ function formatTasksForClipboard(
 }
 
 export default function ORATPage() {
+  // [agent-D2] BEGIN — read ?project=<id>&welcome=1 from invite redirect
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialProjectIdFromQuery = searchParams.get("project");
+  const showWelcomeFromQuery = searchParams.get("welcome") === "1";
+  // [agent-D2] END
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [profiles, setProfiles] = useState<InternalUser[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>("all-projects");
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(
+    initialProjectIdFromQuery ?? "all-projects",
+  );
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"board" | "list" | "timeline">("board");
   const [taskFilter, setTaskFilter] = useState<TaskFilterValue>("all");
@@ -248,6 +258,26 @@ export default function ORATPage() {
     };
   }, [view, taskFilter, currentProjectId]);
   // [agent-C] END saved-views: apply filters helper
+
+  // [agent-D2] BEGIN — show welcome toast for project-scoped invitees and strip query params
+  const welcomeShownRef = useRef(false);
+  useEffect(() => {
+    if (welcomeShownRef.current) return;
+    if (!showWelcomeFromQuery || !initialProjectIdFromQuery) return;
+    if (loading) return;
+    const project = projects.find((p) => p.id === initialProjectIdFromQuery);
+    if (!project) return;
+    welcomeShownRef.current = true;
+    toast.success(`Welcome to ${project.name}`);
+    router.replace("/orat");
+  }, [
+    loading,
+    projects,
+    showWelcomeFromQuery,
+    initialProjectIdFromQuery,
+    router,
+  ]);
+  // [agent-D2] END
 
   const currentProject = useMemo(
     () =>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Pencil, Mail, X, Loader2 } from "lucide-react";
+import { Pencil, Mail, X, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,8 +10,12 @@ import {
   listPendingInvitations,
   resendInvitationEmail,
   revokeInvitation,
+  getCurrentUserId,
+  getProjectRole,
+  listProjectPendingInvitations,
 } from "@/app/orat/actions";
-import type { Project, InternalUser } from "../types";
+import type { Invitation, Project, InternalUser } from "../types";
+import { ProjectInviteForm } from "./ProjectInviteForm";
 
 interface ProjectTeamViewProps {
   project: Project;
@@ -53,6 +57,13 @@ function inviteeDisplayName(inv: PendingInvitation): string {
   return composed || inv.email;
 }
 
+function formatDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString();
+}
+
 export function ProjectTeamView({
   project,
   internalUsers,
@@ -63,42 +74,49 @@ export function ProjectTeamView({
   );
   const external = project.externalStakeholders;
 
-  const [pending, setPending] = useState<PendingInvitation[]>([]);
-  const [pendingLoading, setPendingLoading] = useState(true);
-  const [pendingError, setPendingError] = useState<string | null>(null);
+  // Org-wide pending invitations (Agent D1).
+  const [orgPending, setOrgPending] = useState<PendingInvitation[]>([]);
+  const [orgPendingLoading, setOrgPendingLoading] = useState(true);
+  const [orgPendingError, setOrgPendingError] = useState<string | null>(null);
   const [role, setRole] = useState<OrgRole>(null);
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
 
+  // Project-scoped invitations (Agent D2).
+  const [showInvite, setShowInvite] = useState(false);
+  const [canInvite, setCanInvite] = useState(false);
+  const [projectPending, setProjectPending] = useState<Invitation[]>([]);
+  const [projectPendingError, setProjectPendingError] = useState<string | null>(null);
+
   const orgId = project.organizationId;
 
-  const loadPending = useCallback(async () => {
+  const loadOrgPending = useCallback(async () => {
     if (!orgId) {
-      setPending([]);
-      setPendingLoading(false);
+      setOrgPending([]);
+      setOrgPendingLoading(false);
       return;
     }
-    setPendingLoading(true);
-    setPendingError(null);
+    setOrgPendingLoading(true);
+    setOrgPendingError(null);
     const res = await listPendingInvitations(orgId);
     if ("error" in res) {
-      setPendingError(res.error);
-      setPending([]);
+      setOrgPendingError(res.error);
+      setOrgPending([]);
     } else {
-      setPending(res.data);
+      setOrgPending(res.data);
     }
-    setPendingLoading(false);
+    setOrgPendingLoading(false);
   }, [orgId]);
 
   useEffect(() => {
     let active = true;
-    loadPending();
+    loadOrgPending();
     getCurrentUserOrgRole().then((r) => {
       if (active) setRole(r);
     });
     return () => {
       active = false;
     };
-  }, [loadPending]);
+  }, [loadOrgPending]);
 
   const canManage = role === "owner" || role === "admin";
 
@@ -112,12 +130,12 @@ export function ProjectTeamView({
           return;
         }
         toast.success(`Invitation re-sent to ${inv.email}`);
-        await loadPending();
+        await loadOrgPending();
       } finally {
         setBusyInviteId(null);
       }
     },
-    [loadPending],
+    [loadOrgPending],
   );
 
   const handleRevoke = useCallback(
@@ -134,7 +152,7 @@ export function ProjectTeamView({
           return;
         }
         toast.success(`Invitation for ${inv.email} revoked`);
-        setPending((prev) => prev.filter((p) => p.id !== inv.id));
+        setOrgPending((prev) => prev.filter((p) => p.id !== inv.id));
       } finally {
         setBusyInviteId(null);
       }
@@ -142,15 +160,75 @@ export function ProjectTeamView({
     [],
   );
 
+  const refreshProjectPending = useCallback(async () => {
+    const res = await listProjectPendingInvitations(project.id);
+    if ("error" in res) {
+      setProjectPending([]);
+      setProjectPendingError(res.error);
+      return;
+    }
+    setProjectPending(res.data);
+    setProjectPendingError(null);
+  }, [project.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const userId = await getCurrentUserId();
+      if (!userId || cancelled) return;
+      const projectRole = await getProjectRole(userId, project.id);
+      if (cancelled) return;
+      const allowed =
+        projectRole === "owner" ||
+        projectRole === "admin" ||
+        projectRole === "editor";
+      setCanInvite(allowed);
+      if (allowed) {
+        await refreshProjectPending();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, refreshProjectPending]);
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="font-semibold text-slate-900 dark:text-white">Project Team</h3>
-        <Button size="sm" variant="outline" onClick={onEditProject}>
-          <Pencil className="h-4 w-4" />
-          Edit
-        </Button>
+        <div className="flex items-center gap-2">
+          {canInvite && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowInvite((v) => !v)}
+              aria-expanded={showInvite}
+              aria-controls="project-invite-form"
+            >
+              <UserPlus className="h-4 w-4" />
+              {showInvite ? "Close" : "Invite to project"}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={onEditProject}>
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
+        </div>
       </div>
+
+      {canInvite && showInvite && (
+        <div
+          id="project-invite-form"
+          className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50"
+        >
+          <ProjectInviteForm
+            projectId={project.id}
+            projectName={project.name}
+            onInvited={refreshProjectPending}
+          />
+        </div>
+      )}
+
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -210,21 +288,55 @@ export function ProjectTeamView({
         </div>
       </div>
 
+      {canInvite && (
+        <div className="mt-6">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Pending project invitations
+          </p>
+          {projectPendingError ? (
+            <p className="text-sm text-red-600 dark:text-red-400">{projectPendingError}</p>
+          ) : projectPending.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No pending invitations.</p>
+          ) : (
+            <ul className="space-y-2">
+              {projectPending.map((inv) => {
+                const fullName = `${inv.firstName} ${inv.lastName}`.trim();
+                return (
+                  <li
+                    key={inv.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-100 p-2 dark:border-slate-700"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
+                        {fullName || inv.email}
+                      </p>
+                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                        {inv.email} · {inv.projectRole === "viewer" ? "Viewer" : "Editor"} · expires {formatDate(inv.expiresAt)}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div className="mt-6">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          Pending invitations
+          Pending organization invitations
         </p>
-        {pendingLoading ? (
+        {orgPendingLoading ? (
           <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
-        ) : pendingError ? (
-          <p className="text-sm text-red-600 dark:text-red-400">{pendingError}</p>
-        ) : pending.length === 0 ? (
+        ) : orgPendingError ? (
+          <p className="text-sm text-red-600 dark:text-red-400">{orgPendingError}</p>
+        ) : orgPending.length === 0 ? (
           <p className="text-sm text-slate-500 dark:text-slate-400">
             No pending invitations.
           </p>
         ) : (
           <ul className="space-y-2">
-            {pending.map((inv) => {
+            {orgPending.map((inv) => {
               const busy = busyInviteId === inv.id;
               return (
                 <li

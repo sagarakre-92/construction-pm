@@ -11,7 +11,9 @@ export default async function InviteAcceptPage({ params }: Props) {
   if (!token?.trim()) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
-        <p className="text-red-600 dark:text-red-400">Invalid invitation link.</p>
+        <p className="text-red-600 dark:text-red-400">
+          This invitation link is no longer valid.
+        </p>
         <Button asChild variant="outline">
           <Link href="/orat">Go to app</Link>
         </Button>
@@ -33,12 +35,18 @@ export default async function InviteAcceptPage({ params }: Props) {
   if ("error" in result) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 text-center">
-        <p className="text-red-600 dark:text-red-400">{result.error}</p>
+        <p className="text-red-600 dark:text-red-400">
+          This invitation is no longer valid: {result.error}
+        </p>
         <Button asChild variant="outline">
           <Link href="/orat">Go to app</Link>
         </Button>
       </div>
     );
+  }
+
+  if (result.data.projectId) {
+    redirect(`/orat?project=${result.data.projectId}&welcome=1`);
   }
 
   redirect("/orat");

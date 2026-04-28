@@ -10,6 +10,8 @@ import type {
   Task,
   Organization,
   ExternalStakeholder,
+  Invitation,
+  ProjectMembershipRole,
   TaskStatus,
   TaskPriority,
   SavedView,
@@ -574,7 +576,6 @@ export async function getTasksForProject(
   return { data: tasks };
 }
 
-type SavedViewRow = {
   id: string;
   organization_id: string;
   user_id: string;
@@ -764,4 +765,195 @@ export async function deleteSavedView(
     .eq("id", viewId);
   if (error) return { error: error.message };
   return { data: null };
+}
+
+// ---------------------------------------------------------------------------
+// Project-scoped invitations
+// ---------------------------------------------------------------------------
+
+function buildInviteLink(token: string): string {
+  let base = "";
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    base = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  } else if (process.env.VERCEL_URL) {
+    base = `https://${process.env.VERCEL_URL}`;
+  }
+  return base ? `${base}/invite/${token}` : `/invite/${token}`;
+}
+
+/**
+ * Creates a project-scoped invitation. The caller must be an org owner/admin
+ * OR a project editor on the target project (enforced inside the RPC).
+ */
+export async function createProjectInvitation(
+  projectId: string,
+  email: string,
+  firstName: string,
+  lastName: string,
+  title: string,
+  projectRole: "editor" | "viewer",
+): Promise<ActionResult<{ inviteLink: string; token: string }>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const trimmedEmail = (email ?? "").trim().toLowerCase();
+  if (!trimmedEmail) return { error: "Email is required" };
+  if (projectRole !== "editor" && projectRole !== "viewer") {
+    return { error: "Project role must be editor or viewer" };
+  }
+
+  const { data, error } = await supabase.rpc(
+    "orat_create_project_invitation",
+    {
+      p_project_id: projectId,
+      p_email: trimmedEmail,
+      p_first_name: (firstName ?? "").trim(),
+      p_last_name: (lastName ?? "").trim(),
+      p_title: (title ?? "").trim(),
+      p_project_role: projectRole,
+    },
+  );
+
+  if (error) return { error: error.message };
+  const out = data as { error?: string; id?: string; token?: string } | null;
+  if (out && typeof out === "object" && typeof out.error === "string") {
+    return { error: out.error };
+  }
+  if (!out || typeof out.token !== "string") {
+    return { error: "Failed to create invitation" };
+  }
+
+  return { data: { inviteLink: buildInviteLink(out.token), token: out.token } };
+}
+
+/**
+ * Accepts a project-scoped invitation. On success, grows orat_project_members
+ * (with the invited project_role) AND, in the pragmatic path, organization_members.
+ * Returns the project_id and organization_id of the accepted invite.
+ */
+export async function acceptProjectInvitation(
+  token: string,
+): Promise<ActionResult<{ projectId: string; organizationId: string }>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const trimmed = (token ?? "").trim();
+  if (!trimmed) return { error: "Invalid invitation link" };
+
+  const { data, error } = await supabase.rpc(
+    "orat_accept_project_invitation",
+    { p_token: trimmed },
+  );
+
+  if (error) return { error: error.message };
+  const out = data as
+    | { error?: string; ok?: boolean; project_id?: string; organization_id?: string }
+    | null;
+  if (out && typeof out === "object" && typeof out.error === "string") {
+    return { error: out.error };
+  }
+  if (
+    !out ||
+    out.ok !== true ||
+    typeof out.project_id !== "string" ||
+    typeof out.organization_id !== "string"
+  ) {
+    return { error: "Invalid invitation" };
+  }
+
+  return {
+    data: { projectId: out.project_id, organizationId: out.organization_id },
+  };
+}
+
+/**
+ * Returns pending project-scoped invitations for a project. The caller must be
+ * able to read the row under RLS (org owner/admin per migration 015).
+ */
+export async function listProjectPendingInvitations(
+  projectId: string,
+): Promise<ActionResult<Invitation[]>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { data, error } = await supabase
+    .from("organization_invitations")
+    .select(
+      "id, email, role, status, created_at, expires_at, first_name, last_name, title, project_id, project_role",
+    )
+    .eq("project_id", projectId)
+    .eq("status", "pending");
+
+  if (error) return { error: error.message };
+
+  const rows = (data ?? []) as Array<{
+    id: string;
+    email: string;
+    role: string;
+    status: string;
+    created_at: string;
+    expires_at: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    title?: string | null;
+    project_id?: string | null;
+    project_role?: string | null;
+  }>;
+
+  const list: Invitation[] = rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    role: r.role,
+    status: r.status,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    firstName: r.first_name ?? "",
+    lastName: r.last_name ?? "",
+    title: r.title ?? "",
+    projectId: r.project_id ?? undefined,
+    projectRole:
+      r.project_role === "viewer" || r.project_role === "editor"
+        ? r.project_role
+        : undefined,
+  }));
+
+  return { data: list };
+}
+
+/**
+ * Returns the current user's effective project role. Org owner/admin is reflected
+ * via 'owner' / 'admin'; otherwise returns the orat_project_members.project_role
+ * ('editor' | 'viewer'), or null if the user has no access.
+ *
+ * The `userId` parameter is included for call-site clarity; the underlying RPC
+ * always operates on `auth.uid()` for security.
+ */
+export async function getProjectRole(
+  userId: string,
+  projectId: string,
+): Promise<ProjectMembershipRole | null> {
+  void userId;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("orat_user_project_role", {
+    p_project_id: projectId,
+  });
+  if (error) return null;
+  if (
+    data === "owner" ||
+    data === "admin" ||
+    data === "editor" ||
+    data === "viewer"
+  ) {
+    return data;
+  }
+  return null;
 }
