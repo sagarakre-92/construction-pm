@@ -29,8 +29,14 @@ yarn-error.log*
 
 # Local env files
 .env*.local
+.env.local.*
+.env.prod
 .env
 .env.sentry-build-plugin
+
+# Generated SQL bundles (concatenations of supabase/migrations/NNN_*.sql,
+# regenerated on demand; the source of truth is the individual migration files)
+supabase/migrations/_apply_*.sql
 
 # Vercel
 .vercel
