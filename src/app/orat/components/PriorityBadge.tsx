@@ -10,22 +10,29 @@ const PRIORITY_CLASSES: Record<TaskPriority, string> = {
 };
 
 interface PriorityBadgeProps {
-  priority: TaskPriority;
+  priority: TaskPriority | null | undefined;
   className?: string;
 }
 
 export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
+  // Defensive default mirrors the server-side `coercePriority` helper so the
+  // UI never crashes on legacy rows (created before migration 018) or stale
+  // fixtures.
+  const safePriority: TaskPriority =
+    priority === "high" || priority === "medium" || priority === "low"
+      ? priority
+      : "medium";
   return (
     <span
-      aria-label={`Priority: ${formatTaskPriority(priority)}`}
-      title={`Priority: ${formatTaskPriority(priority)}`}
+      aria-label={`Priority: ${formatTaskPriority(safePriority)}`}
+      title={`Priority: ${formatTaskPriority(safePriority)}`}
       className={cn(
         "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide leading-none",
-        PRIORITY_CLASSES[priority],
+        PRIORITY_CLASSES[safePriority],
         className,
       )}
     >
-      {formatTaskPriority(priority)}
+      {formatTaskPriority(safePriority)}
     </span>
   );
 }

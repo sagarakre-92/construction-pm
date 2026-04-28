@@ -14,6 +14,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     originalDueDate: "2026-12-01",
     currentDueDate: "2026-12-01",
     status: "Not Started",
+    priority: "medium",
     history: [],
     ...overrides,
   };

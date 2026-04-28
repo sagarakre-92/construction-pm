@@ -151,6 +151,7 @@ about to do, read and follow it.** Index:
 - `add-task-view/` — add a new task view alongside Board/List/Gantt
 - `add-shadcn-component/` — add a new UI primitive in our style
 - `write-e2e-test/` — Playwright test in this repo's idiom
+- `write-user-story/` — write a Gherkin `.feature` user story (role/want/benefit + scenarios)
 - `tdd/` — red-green-refactor TDD workflow (vertical slices, behavior-not-implementation tests). **Use this whenever building a feature or fixing a bug test-first.**
 
 Skills sourced from external repos are installed via the `skills` CLI and
