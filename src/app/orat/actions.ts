@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { sendInvitationEmail } from "@/lib/email";
 import type {
   Project,
   Task,
@@ -16,12 +17,62 @@ import {
 
 export type { ActionResult } from "./lib/org-data";
 
+/** Resolve the public absolute base URL for invite links from env. */
+function appBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return "";
+}
+
+/** Build an invite URL from a token; absolute when an app URL is configured. */
+function buildInviteUrl(token: string): string {
+  const base = appBaseUrl();
+  return base ? `${base}/invite/${token}` : `/invite/${token}`;
+}
+
+async function loadInviterName(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  fallbackEmail: string | null,
+): Promise<string> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("first_name, last_name")
+    .eq("id", userId)
+    .maybeSingle();
+  const first = (data as { first_name?: string } | null)?.first_name?.trim() ?? "";
+  const last = (data as { last_name?: string } | null)?.last_name?.trim() ?? "";
+  const full = `${first} ${last}`.trim();
+  if (full) return full;
+  return fallbackEmail?.trim() || "A teammate";
+}
+
+async function loadOrgName(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+): Promise<string> {
+  const { data } = await supabase
+    .from("organizations")
+    .select("name")
+    .eq("id", organizationId)
+    .maybeSingle();
+  return (data as { name?: string } | null)?.name?.trim() || "your team";
+}
+
 export async function getCurrentUserOrgRole() {
   return (await import("./lib/org-data")).getCurrentUserOrgRole();
 }
 
 export async function getOrganizationMembersAndInvitations(organizationId: string) {
   return (await import("./lib/org-data")).getOrganizationMembersAndInvitations(organizationId);
+}
+
+export async function listPendingInvitations(organizationId: string) {
+  return (await import("./lib/org-data")).listPendingInvitations(organizationId);
 }
 
 function dateOnly(iso: string): string {
@@ -108,10 +159,13 @@ export async function createInvitation(
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
 
+  const trimmedFirst = (firstName ?? "").trim();
+  const trimmedEmail = email.trim();
+
   const { data, error } = await supabase.rpc("orat_create_organization_invitation", {
     p_organization_id: organizationId,
-    p_email: email.trim(),
-    p_first_name: (firstName ?? "").trim(),
+    p_email: trimmedEmail,
+    p_first_name: trimmedFirst,
     p_last_name: (lastName ?? "").trim(),
     p_title: (title ?? "").trim(),
   });
@@ -122,21 +176,166 @@ export async function createInvitation(
   if (out && typeof out === "object" && "error" in out && typeof out.error === "string") {
     return { error: out.error };
   }
-  if (!out || typeof out.token !== "string") return { error: "Failed to create invitation" };
-
-  let base = "";
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    base = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
-  } else if (process.env.VERCEL_URL) {
-    base = `https://${process.env.VERCEL_URL}`;
+  if (!out || typeof out.token !== "string" || typeof out.id !== "string") {
+    return { error: "Failed to create invitation" };
   }
-  const inviteLink = base ? `${base}/invite/${out.token}` : `/invite/${out.token}`;
+
+  const inviteLink = buildInviteUrl(out.token);
 
   if (process.env.NODE_ENV !== "test") {
-    console.info("[Invite] Created invitation link for", email, ":", inviteLink);
+    console.info("[Invite] Created invitation link for", trimmedEmail, ":", inviteLink);
+  }
+
+  // Email delivery is part of "create"; if it fails we roll the row back so the
+  // pending list never shows an invitation that was never actually sent.
+  const [organizationName, inviterName, expiresAt] = await Promise.all([
+    loadOrgName(supabase, organizationId),
+    loadInviterName(supabase, session.user.id, session.user.email ?? null),
+    supabase
+      .from("organization_invitations")
+      .select("expires_at")
+      .eq("id", out.id)
+      .maybeSingle()
+      .then(
+        (r) =>
+          (r.data as { expires_at?: string } | null)?.expires_at ?? undefined,
+      ),
+  ]);
+
+  const absoluteInviteUrl = inviteLink.startsWith("http")
+    ? inviteLink
+    : `${appBaseUrl() || "https://orat.app"}${inviteLink}`;
+
+  const sendResult = await sendInvitationEmail({
+    to: trimmedEmail,
+    inviteUrl: absoluteInviteUrl,
+    organizationName,
+    inviterName,
+    recipientFirstName: trimmedFirst || undefined,
+    expiresAt,
+  });
+
+  if (!sendResult.ok) {
+    await supabase
+      .from("organization_invitations")
+      .delete()
+      .eq("id", out.id);
+    return {
+      error:
+        sendResult.error
+          ? `Failed to send invitation email: ${sendResult.error}`
+          : "Failed to send invitation email",
+    };
   }
 
   return { data: { inviteLink, token: out.token } };
+}
+
+/**
+ * Re-send the invitation email for an existing pending invitation. Caller must
+ * be owner/admin of the org (RLS gates the read of organization_invitations).
+ * Same token is preserved so any prior link the recipient might already have
+ * keeps working; expires_at is bumped forward by 7 days so the row visibly
+ * "refreshes" in the UI without needing a new column.
+ */
+export async function resendInvitationEmail(
+  invitationId: string,
+): Promise<ActionResult<{ ok: true }>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { data: row, error: fetchErr } = await supabase
+    .from("organization_invitations")
+    .select(
+      "id, organization_id, email, role, status, token, expires_at, first_name, last_name, title",
+    )
+    .eq("id", invitationId)
+    .maybeSingle();
+
+  if (fetchErr) return { error: fetchErr.message };
+  if (!row) return { error: "Invitation not found" };
+
+  const inv = row as {
+    id: string;
+    organization_id: string;
+    email: string;
+    status: string;
+    token: string;
+    expires_at?: string;
+    first_name?: string;
+  };
+
+  if (inv.status !== "pending") {
+    return { error: "Only pending invitations can be re-sent" };
+  }
+
+  const inviteLink = buildInviteUrl(inv.token);
+  const absoluteInviteUrl = inviteLink.startsWith("http")
+    ? inviteLink
+    : `${appBaseUrl() || "https://orat.app"}${inviteLink}`;
+
+  const [organizationName, inviterName] = await Promise.all([
+    loadOrgName(supabase, inv.organization_id),
+    loadInviterName(supabase, session.user.id, session.user.email ?? null),
+  ]);
+
+  const newExpiresAt = new Date(
+    Date.now() + 7 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const sendResult = await sendInvitationEmail({
+    to: inv.email,
+    inviteUrl: absoluteInviteUrl,
+    organizationName,
+    inviterName,
+    recipientFirstName: inv.first_name?.trim() || undefined,
+    expiresAt: newExpiresAt,
+  });
+
+  if (!sendResult.ok) {
+    return {
+      error:
+        sendResult.error
+          ? `Failed to send invitation email: ${sendResult.error}`
+          : "Failed to send invitation email",
+    };
+  }
+
+  // Refresh the expiration so the row visibly "moves" in the pending list and
+  // the recipient gets a fresh 7-day window. RLS gates this update to admins.
+  await supabase
+    .from("organization_invitations")
+    .update({ expires_at: newExpiresAt })
+    .eq("id", inv.id);
+
+  return { data: { ok: true } };
+}
+
+/**
+ * Revoke a pending invitation by transitioning status='pending' → 'cancelled'.
+ * After revocation the existing accept RPC will reject the token with
+ * "This invitation has already been used or cancelled". Caller must be
+ * owner/admin (enforced by RLS on organization_invitations).
+ */
+export async function revokeInvitation(
+  invitationId: string,
+): Promise<ActionResult<null>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { error } = await supabase
+    .from("organization_invitations")
+    .update({ status: "cancelled" })
+    .eq("id", invitationId);
+
+  if (error) return { error: error.message };
+  return { data: null };
 }
 
 /** Accept an organization invitation by token. Call after auth; marks invite accepted and adds user to org. */

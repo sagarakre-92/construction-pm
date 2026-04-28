@@ -135,6 +135,59 @@ export type OrgInvitationRow = {
   title: string;
 };
 
+/**
+ * Pending (status = 'pending') invitations for an organization. Used by the
+ * project Team view to show org-wide outstanding invitations alongside the
+ * project's members. RLS restricts visibility to org members; the additional
+ * write actions (resend / revoke) re-check that the caller is owner/admin.
+ */
+export async function listPendingInvitations(
+  organizationId: string,
+): Promise<ActionResult<OrgInvitationRow[]>> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { data, error } = await supabase
+    .from("organization_invitations")
+    .select(
+      "id, email, role, status, created_at, expires_at, first_name, last_name, title",
+    )
+    .eq("organization_id", organizationId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  if (error) return { error: error.message };
+
+  const rows: OrgInvitationRow[] = (data ?? []).map(
+    (i: {
+      id: string;
+      email: string;
+      role: string;
+      status: string;
+      created_at: string;
+      expires_at: string;
+      first_name?: string;
+      last_name?: string;
+      title?: string;
+    }) => ({
+      id: i.id,
+      email: i.email,
+      role: i.role,
+      status: i.status,
+      created_at: i.created_at,
+      expires_at: i.expires_at,
+      first_name: i.first_name ?? "",
+      last_name: i.last_name ?? "",
+      title: i.title ?? "",
+    }),
+  );
+
+  return { data: rows };
+}
+
 /** Members and pending invitations for an org. Caller must be owner/admin (enforced by RLS). */
 export async function getOrganizationMembersAndInvitations(
   organizationId: string

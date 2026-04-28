@@ -14,6 +14,7 @@ import {
   createProjectForOrganization,
   ensureProjectInCurrentOrg,
   ensureTaskInCurrentOrg,
+  listPendingInvitations,
 } from "./org-data";
 import {
   updateProject,
@@ -21,7 +22,12 @@ import {
   updateTaskStatus,
   deleteTask,
   reorderTasks,
+  revokeInvitation,
 } from "../actions";
+
+vi.mock("@/lib/email", () => ({
+  sendInvitationEmail: vi.fn(async () => ({ ok: true })),
+}));
 import type { Project, Task } from "../types";
 import {
   createSupabaseFake,
@@ -562,6 +568,89 @@ describe("org-data: organization-aware foundations", () => {
       expect("error" in res).toBe(true);
       if ("error" in res) {
         expect(res.error).toMatch(/not in your organization/i);
+      }
+    });
+  });
+
+  describe("listPendingInvitations", () => {
+    it("filters by organization_id and status='pending' and returns rows", async () => {
+      const fake = await installFake({
+        tables: {
+          organization_invitations: [
+            {
+              id: "inv-1",
+              organization_id: ORG_A,
+              email: "maria@example.com",
+              role: "member",
+              status: "pending",
+              created_at: "2026-04-20T00:00:00Z",
+              expires_at: "2026-04-27T00:00:00Z",
+              first_name: "Maria",
+              last_name: "Lopez",
+              title: "Engineer",
+            },
+          ],
+        },
+      });
+
+      const res = await listPendingInvitations(ORG_A);
+
+      expect("data" in res).toBe(true);
+      if ("data" in res) {
+        expect(res.data).toHaveLength(1);
+        expect(res.data[0]).toMatchObject({
+          id: "inv-1",
+          email: "maria@example.com",
+          status: "pending",
+        });
+      }
+
+      const eqs = fake.calls.eq ?? [];
+      expect(
+        eqs.some((c) => c.args[0] === "organization_id" && c.args[1] === ORG_A),
+      ).toBe(true);
+      expect(
+        eqs.some((c) => c.args[0] === "status" && c.args[1] === "pending"),
+      ).toBe(true);
+    });
+  });
+
+  describe("revokeInvitation (server action)", () => {
+    const INVITE_ID = "inv-1";
+
+    it("happy path updates the row with status='cancelled' scoped by id", async () => {
+      const fake = await installFake({
+        tables: {
+          organization_invitations: [
+            {
+              id: INVITE_ID,
+              organization_id: ORG_A,
+              status: "pending",
+            },
+          ],
+        },
+      });
+
+      const res = await revokeInvitation(INVITE_ID);
+
+      expect(res).toEqual({ data: null });
+      const payload = lastUpdatePayload(fake, "organization_invitations");
+      expect(payload).toMatchObject({ status: "cancelled" });
+      const idEq = (fake.calls.eq ?? []).find(
+        (c) =>
+          c.table === "organization_invitations" && c.args[0] === "id",
+      );
+      expect(idEq?.args[1]).toBe(INVITE_ID);
+    });
+
+    it("rejects when not authenticated", async () => {
+      await installFake({ session: null });
+
+      const res = await revokeInvitation(INVITE_ID);
+
+      expect("error" in res).toBe(true);
+      if ("error" in res) {
+        expect(res.error).toMatch(/Not authenticated/i);
       }
     });
   });
