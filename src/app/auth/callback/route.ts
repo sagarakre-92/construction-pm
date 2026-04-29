@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type EmailOtpType } from "@supabase/supabase-js";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -14,7 +14,7 @@ const EMAIL_OTP_TYPES = new Set<string>([
 type CookieChunk = {
   name: string;
   value: string;
-  options?: Record<string, unknown>;
+  options?: CookieOptions;
 };
 
 function parseEmailOtpType(raw: string | null): EmailOtpType | null {
@@ -58,7 +58,7 @@ function createSupabaseForCallback(request: NextRequest, queue: CookieChunk[]) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
         cookiesToSet.forEach(({ name, value, options }) => {
           queue.push({ name, value, options });
         });
