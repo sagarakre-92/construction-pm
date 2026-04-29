@@ -13,17 +13,25 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verifiedMessage, setVerifiedMessage] = useState(false);
+  const [resetMessage, setResetMessage] = useState(false);
   const searchParams = useSearchParams();
 
   useEffect(() => {
     const err = searchParams.get("error");
     const verified = searchParams.get("verified");
+    const reset = searchParams.get("reset");
     if (err === "auth_callback_failed") {
       setError("Email confirmation failed or link expired. Please try again or sign in.");
       setVerifiedMessage(false);
+      setResetMessage(false);
     } else if (verified === "1") {
       setError(null);
       setVerifiedMessage(true);
+      setResetMessage(false);
+    } else if (reset === "1") {
+      setError(null);
+      setVerifiedMessage(false);
+      setResetMessage(true);
     }
   }, [searchParams]);
   async function handleSubmit(e: React.FormEvent) {
@@ -68,6 +76,14 @@ function LoginForm() {
             role="status"
           >
             Email verified. You can now log in.
+          </div>
+        )}
+        {resetMessage && (
+          <div
+            className="rounded-lg bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 px-4 py-3 text-sm"
+            role="status"
+          >
+            Password updated. Please log in.
           </div>
         )}
         {error && (
