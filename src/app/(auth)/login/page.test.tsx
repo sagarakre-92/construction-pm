@@ -7,7 +7,7 @@ describe("LoginPage", () => {
     render(<LoginPage />);
     expect(screen.getByRole("heading", { name: /log in/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /log in/i })).toBeInTheDocument();
   });
 
@@ -15,5 +15,20 @@ describe("LoginPage", () => {
     render(<LoginPage />);
     const link = screen.getByRole("link", { name: /sign up/i });
     expect(link).toHaveAttribute("href", "/signup");
+  });
+
+  it("has link to forgot-password page", () => {
+    render(<LoginPage />);
+    const link = screen.getByRole("link", { name: /forgot password/i });
+    expect(link).toHaveAttribute("href", "/forgot-password");
+  });
+
+  it("annotates inputs for password managers", () => {
+    render(<LoginPage />);
+    expect(screen.getByLabelText(/email/i)).toHaveAttribute("autoComplete", "email");
+    expect(screen.getByLabelText(/^password$/i)).toHaveAttribute(
+      "autoComplete",
+      "current-password",
+    );
   });
 });
