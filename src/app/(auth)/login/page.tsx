@@ -21,7 +21,9 @@ function LoginForm() {
     const verified = searchParams.get("verified");
     const reset = searchParams.get("reset");
     if (err === "auth_callback_failed") {
-      setError("Email confirmation failed or link expired. Please try again or sign in.");
+      setError(
+        "Email confirmation failed or the link expired. If you opened it from an email app, copy the link and paste it into Safari or Chrome, or request a new link from the sign up page.",
+      );
       setVerifiedMessage(false);
       setResetMessage(false);
     } else if (verified === "1") {
