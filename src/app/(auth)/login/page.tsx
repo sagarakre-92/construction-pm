@@ -4,6 +4,8 @@ import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeEmail } from "@/lib/auth/email";
+import { PasswordInput } from "@/components/ui/password-input";
 
 function LoginForm() {
   const [email, setEmail] = useState("");
@@ -35,7 +37,7 @@ function LoginForm() {
       }
       const supabase = createClient();
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizeEmail(email),
         password,
       });
       if (signInError) {
@@ -86,6 +88,8 @@ function LoginForm() {
           <input
             id="email"
             type="email"
+            name="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -94,19 +98,27 @@ function LoginForm() {
           />
         </div>
         <div>
-          <label
-            htmlFor="password"
-            className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
-          >
-            Password
-          </label>
-          <input
+          <div className="flex items-center justify-between mb-1">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-slate-700 dark:text-slate-300"
+            >
+              Password
+            </label>
+            <Link
+              href="/forgot-password"
+              className="text-xs text-primary-600 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <PasswordInput
             id="password"
-            type="password"
+            name="password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
         </div>
         <button
