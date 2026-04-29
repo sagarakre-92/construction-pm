@@ -56,7 +56,12 @@ minimum_password_length = 8
 [auth.email]
 enable_signup = true
 double_confirm_changes = false
-enable_confirmations = false
+# Require users to click a confirmation link before they can sign in.
+# Locally, mails are captured by the Supabase CLI's mail server (Inbucket).
+# In production, SMTP must be configured in the Supabase Dashboard
+# (Authentication → Email Templates / SMTP Settings) for the verification
+# email to actually be delivered to real inboxes.
+enable_confirmations = true
 secure_password_change = false
 max_frequency = "1s"
 otp_length = 6
