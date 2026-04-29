@@ -92,17 +92,23 @@ export default function SignUpPage() {
           window.location.href = "/signup/verify-email";
           return;
         }
-        // Other errors (network, rate limit, server) get a generic message;
-        // we still log the original for dev/staging debuggability.
+        // Surface the real error so the user (and operators reading the
+        // browser console) see what's wrong — e.g. SMTP send failures,
+        // rate limits, password-policy mismatches. Hiding everything
+        // behind "Something went wrong" makes prod issues invisible.
         console.error("signUp error", signUpError);
-        setError("Something went wrong. Please try again.");
+        setError(
+          signUpError.message || "Something went wrong. Please try again.",
+        );
         return;
       }
       window.location.href = "/signup/verify-email";
       return;
     } catch (err) {
       console.error("signUp threw", err);
-      setError("Something went wrong. Please try again.");
+      setError(
+        "Network error. Please check your connection and try again.",
+      );
     } finally {
       setLoading(false);
     }
