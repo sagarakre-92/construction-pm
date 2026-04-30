@@ -4,7 +4,7 @@ export default function HomePage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-8">
       <h1 className="mb-2 text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">
-        Owner&apos;s Rep Action Tracker
+        Alino
       </h1>
       <p className="mb-2 text-center text-slate-600 dark:text-slate-400 max-w-md text-sm sm:text-base">
         Track actions, projects, and teams in one place.
