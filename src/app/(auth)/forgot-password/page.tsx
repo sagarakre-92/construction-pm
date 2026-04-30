@@ -30,7 +30,7 @@ export default function ForgotPasswordPage() {
       const supabase = createClient();
       const redirectTo =
         typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback?type=recovery&next=/reset-password`
+          ? `${window.location.origin}/auth/callback/recovery`
           : undefined;
       // Always show the same success message regardless of result to avoid
       // leaking whether an account exists for the supplied email.

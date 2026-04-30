@@ -33,6 +33,9 @@ import {
 
 export type { ActionResult } from "./lib/org-data";
 
+/** When env base URL is missing, invitation emails still need an absolute URL. Production canonical host. */
+const FALLBACK_APP_ORIGIN = "https://alinoapp.com";
+
 /** Resolve the public absolute base URL for invite links from env. */
 function appBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_APP_URL) {
@@ -225,7 +228,7 @@ export async function createInvitation(
 
   const absoluteInviteUrl = inviteLink.startsWith("http")
     ? inviteLink
-    : `${appBaseUrl() || "https://orat.app"}${inviteLink}`;
+    : `${appBaseUrl() || FALLBACK_APP_ORIGIN}${inviteLink}`;
 
   const sendResult = await sendInvitationEmail({
     to: trimmedEmail,
@@ -296,7 +299,7 @@ export async function resendInvitationEmail(
   const inviteLink = buildInviteUrl(inv.token);
   const absoluteInviteUrl = inviteLink.startsWith("http")
     ? inviteLink
-    : `${appBaseUrl() || "https://orat.app"}${inviteLink}`;
+    : `${appBaseUrl() || FALLBACK_APP_ORIGIN}${inviteLink}`;
 
   const [organizationName, inviterName] = await Promise.all([
     loadOrgName(supabase, inv.organization_id),

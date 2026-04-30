@@ -169,7 +169,7 @@ describe("sendInvitationEmail", () => {
       const defaultBody = JSON.parse(
         fetchMock2.mock.calls[0][1].body as string,
       ) as { from: string };
-      expect(defaultBody.from).toMatch(/noreply@orat\.app/);
+      expect(defaultBody.from).toMatch(/noreply@alinoapp\.com/);
     });
 
     it("returns ok=false with the upstream error message when Resend responds non-2xx", async () => {

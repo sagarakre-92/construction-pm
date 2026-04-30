@@ -33,7 +33,7 @@ export interface SendInvitationEmailResult {
   providerMessageId?: string;
 }
 
-const DEFAULT_FROM = "ORAT <noreply@orat.app>";
+const DEFAULT_FROM = "ORAT <noreply@alinoapp.com>";
 
 export async function sendInvitationEmail(
   args: SendInvitationEmailArgs,

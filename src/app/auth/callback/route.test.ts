@@ -75,6 +75,18 @@ describe("GET /auth/callback", () => {
     expect(res.headers.get("location")).toContain("/reset-password");
   });
 
+  it("sends users with only code and next=/reset-password to reset-password (no signOut)", async () => {
+    exchangeCodeForSession.mockResolvedValue({ data: {}, error: null });
+    const res = await GET(
+      requestFor(
+        "https://construction-pm.vercel.app/auth/callback?code=rec&next=/reset-password",
+      ),
+    );
+    expect(exchangeCodeForSession).toHaveBeenCalledWith("rec");
+    expect(signOut).not.toHaveBeenCalled();
+    expect(res.headers.get("location")).toContain("/reset-password");
+  });
+
   it("redirects to login error when exchangeCodeForSession fails", async () => {
     exchangeCodeForSession.mockResolvedValue({
       data: null,
