@@ -202,7 +202,7 @@ export function TaskDialog({
               <SelectContent>
                 {options.map((o) => (
                   <SelectItem key={o.id} value={o.id}>
-                    {o.label} ({o.company})
+                    {o.label}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -46,7 +46,7 @@ import {
   updateTaskStatus as updateTaskStatusAction,
   deleteTask as deleteTaskAction,
 } from "./actions";
-import { getEffectiveStatus, formatDate } from "./utils/task-utils";
+import { getEffectiveStatus, getKanbanColumnStatus, formatDate } from "./utils/task-utils";
 import { createClient } from "@/lib/supabase/client";
 
 function getAssigneeName(
@@ -480,7 +480,7 @@ export default function ORATPage() {
             if (!list) return t;
             const u = list.find((x) => x.taskId === t.id);
             if (!u) return t;
-            if (getEffectiveStatus(t) !== status) return t;
+            if (getKanbanColumnStatus(t) !== status) return t;
             return { ...t, sortOrder: u.sortOrder };
           }),
         }))

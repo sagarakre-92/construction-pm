@@ -3,6 +3,7 @@ import type { Task, TaskStatus } from "../types";
 import {
   isOverdue,
   getEffectiveStatus,
+  getKanbanColumnStatus,
   formatDate,
   getStatusBadgeVariant,
 } from "./task-utils";
@@ -49,6 +50,15 @@ describe("isOverdue", () => {
     const task = makeTask({ currentDueDate: "2025-06-01", status: "In Progress" });
     expect(isOverdue(task, "2025-05-31")).toBe(false);
     expect(isOverdue(task, "2025-06-02")).toBe(true);
+  });
+});
+
+describe("getKanbanColumnStatus", () => {
+  it("maps stored columns 1:1 except legacy Overdue → In Progress", () => {
+    expect(getKanbanColumnStatus(makeTask({ status: "Not Started" }))).toBe("Not Started");
+    expect(getKanbanColumnStatus(makeTask({ status: "In Progress" }))).toBe("In Progress");
+    expect(getKanbanColumnStatus(makeTask({ status: "Complete" }))).toBe("Complete");
+    expect(getKanbanColumnStatus(makeTask({ status: "Overdue" }))).toBe("In Progress");
   });
 });
 

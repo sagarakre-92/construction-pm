@@ -6,16 +6,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "./EmptyState";
 import { PriorityBadge } from "./PriorityBadge";
 import type { Task, TaskStatus } from "../types";
-import { getEffectiveStatus, getStatusBadgeVariant, formatDate } from "../utils/task-utils";
+import {
+  getKanbanColumnStatus,
+  getStatusBadgeVariant,
+  formatDate,
+  isOverdue,
+} from "../utils/task-utils";
 import { cn } from "@/lib/utils";
 
-// "Overdue" is a virtual swimlane: it is a derived view of any task whose
-// effective status is Overdue, regardless of the task's stored status. Cards
-// can be dragged OUT of Overdue (which sets the destination column's stored
-// status); dropping ONTO Overdue is a no-op because Overdue is not a stored
-// status.
-const COLUMNS: { status: TaskStatus; title: string; virtual?: boolean }[] = [
-  { status: "Overdue", title: "Overdue", virtual: true },
+const COLUMNS: { status: TaskStatus; title: string }[] = [
   { status: "Not Started", title: "Not Started" },
   { status: "In Progress", title: "In Progress" },
   { status: "Complete", title: "Complete" },
@@ -43,7 +42,7 @@ export function KanbanView({
   const handleDragStart = useCallback(
     (e: React.DragEvent, task: Task) => {
       e.dataTransfer.setData("taskId", task.id);
-      e.dataTransfer.setData("sourceStatus", getEffectiveStatus(task));
+      e.dataTransfer.setData("sourceStatus", getKanbanColumnStatus(task));
       e.dataTransfer.effectAllowed = "move";
     },
     []
@@ -52,8 +51,6 @@ export function KanbanView({
   const handleDropOnColumn = useCallback(
     (e: React.DragEvent, columnStatus: TaskStatus) => {
       e.preventDefault();
-      // Overdue is derived, not stored — refuse status changes onto it.
-      if (columnStatus === "Overdue") return;
       const taskId = e.dataTransfer.getData("taskId");
       if (taskId) onStatusChange(taskId, columnStatus);
     },
@@ -79,7 +76,7 @@ export function KanbanView({
                 ...without.slice(insertIdx).map((t) => t.id),
               ];
         onReorder(columnStatus, orderedIds);
-      } else if (columnStatus !== "Overdue") {
+      } else {
         onStatusChange(taskId, columnStatus);
       }
     },
@@ -92,44 +89,25 @@ export function KanbanView({
     e.dataTransfer.dropEffect = "move";
   }, []);
 
-  // getEffectiveStatus returns "Overdue" for any past-due, non-complete task,
-  // so filtering each column by `getEffectiveStatus(t) === col.status` is
-  // enough: Overdue tasks land in the Overdue lane only and disappear from
-  // Not Started / In Progress automatically.
   const tasksByColumn = COLUMNS.map((col) => ({
     ...col,
     tasks: tasks
-      .filter((t) => getEffectiveStatus(t) === col.status)
+      .filter((t) => getKanbanColumnStatus(t) === col.status)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
   }));
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:overflow-visible md:pb-0 lg:grid-cols-4">
-      {tasksByColumn.map(({ status, title, tasks: columnTasks, virtual }) => (
+    <div className="flex gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:overflow-visible md:pb-0 lg:grid-cols-3">
+      {tasksByColumn.map(({ status, title, tasks: columnTasks }) => (
         <div
           key={status}
           data-board-column={status}
-          className={cn(
-            "flex min-w-[260px] flex-col shrink-0 rounded-lg border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/30 md:min-w-0",
-            virtual && status === "Overdue" && "border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20"
-          )}
+          className="flex min-w-[260px] flex-col shrink-0 rounded-lg border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/30 md:min-w-0"
           onDrop={(e) => handleDropOnColumn(e, status)}
           onDragOver={handleDragOver}
         >
-          <div
-            className={cn(
-              "border-b border-slate-200 px-4 py-3 dark:border-slate-700",
-              virtual && status === "Overdue" && "border-red-200 dark:border-red-900/40"
-            )}
-          >
-            <h3
-              className={cn(
-                "font-semibold text-slate-900 dark:text-white",
-                virtual && status === "Overdue" && "text-red-700 dark:text-red-400"
-              )}
-            >
-              {title}
-            </h3>
+          <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+            <h3 className="font-semibold text-slate-900 dark:text-white">{title}</h3>
             <span className="text-xs text-slate-500 dark:text-slate-400">
               {columnTasks.length} task{columnTasks.length !== 1 ? "s" : ""}
             </span>
@@ -139,7 +117,8 @@ export function KanbanView({
               <EmptyState title="No tasks" className="min-h-[120px]" />
             ) : (
               columnTasks.map((task) => {
-                const effective = getEffectiveStatus(task);
+                const workflowLabel = getKanbanColumnStatus(task);
+                const overdue = isOverdue(task);
                 return (
                   <div
                     key={task.id}
@@ -148,11 +127,7 @@ export function KanbanView({
                     onDrop={(e) => handleDropOnCard(e, status, task, columnTasks)}
                     onDragOver={handleDragOver}
                     onClick={() => onTaskClick(task)}
-                    className={cn(
-                      "cursor-grab rounded-lg border bg-white p-3 shadow-sm transition-shadow active:cursor-grabbing hover:shadow dark:bg-slate-800",
-                      effective === "Overdue" &&
-                        "border-l-4 border-red-500 border-y-red-200 border-r-red-200 dark:border-red-500 dark:border-y-red-900/50 dark:border-r-red-900/50"
-                    )}
+                    className="cursor-grab rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-shadow active:cursor-grabbing hover:shadow dark:border-slate-700 dark:bg-slate-800"
                   >
                     <div className="flex items-start gap-2">
                       <Checkbox
@@ -161,24 +136,35 @@ export function KanbanView({
                         onClick={(e) => e.stopPropagation()}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="font-medium text-slate-900 dark:text-white">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="min-w-0 font-medium text-slate-900 dark:text-white">
                             {task.title}
                           </p>
-                          <PriorityBadge priority={task.priority} className="shrink-0" />
+                          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                            {overdue && (
+                              <Badge
+                                variant="overdue"
+                                className="uppercase tracking-wide"
+                                aria-label="Overdue"
+                              >
+                                Overdue
+                              </Badge>
+                            )}
+                            <PriorityBadge priority={task.priority} />
+                          </div>
                         </div>
                         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                          {getAssigneeName(task.assignedTo, task.company)} · {task.company}
+                          {getAssigneeName(task.assignedTo, task.company)}
                         </p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                           Due {formatDate(task.currentDueDate)}
                         </p>
-                        <div className="mt-2">
-                          <Badge variant={getStatusBadgeVariant(effective)}>
-                            {effective}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Badge variant={getStatusBadgeVariant(workflowLabel)}>
+                            {workflowLabel}
                           </Badge>
                           {task.projectName && (
-                            <span className="ml-2 text-xs text-slate-500">
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
                               {task.projectName}
                             </span>
                           )}

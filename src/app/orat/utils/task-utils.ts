@@ -8,6 +8,18 @@ export function isOverdue(task: Task, today: string = todayIso()): boolean {
   return task.currentDueDate < today && task.status !== "Complete";
 }
 
+/**
+ * Kanban columns follow stored workflow status only (no overdue swimlane).
+ * Legacy stored status "Overdue" is shown in the In Progress column.
+ */
+export function getKanbanColumnStatus(
+  task: Task
+): "Not Started" | "In Progress" | "Complete" {
+  if (task.status === "Complete") return "Complete";
+  if (task.status === "Overdue") return "In Progress";
+  return task.status;
+}
+
 export function getEffectiveStatus(
   task: Task,
   today: string = todayIso()
