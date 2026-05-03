@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const signUp = vi.fn();
+const getSearchParams = vi.fn(() => new URLSearchParams());
 
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
@@ -12,12 +13,26 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => getSearchParams(),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => "/signup",
+}));
+
 import SignUpPage from "./page";
 
 describe("SignUpPage", () => {
   beforeEach(() => {
     signUp.mockReset();
     signUp.mockResolvedValue({ error: null });
+    getSearchParams.mockReturnValue(new URLSearchParams());
   });
 
   afterEach(() => {
@@ -157,7 +172,39 @@ describe("SignUpPage", () => {
         password: "MyP@ssw0rd1!",
       }),
     );
+    const opts = signUp.mock.calls[0][0] as {
+      options?: { emailRedirectTo?: string };
+    };
+    expect(opts.options?.emailRedirectTo).toMatch(/\/auth\/callback$/);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("includes next in emailRedirectTo when signing up from an invitation", async () => {
+    getSearchParams.mockReturnValue(
+      new URLSearchParams(
+        `next=${encodeURIComponent("/invite/deadbeef0123456789")}`,
+      ),
+    );
+    const user = userEvent.setup();
+    render(<SignUpPage />);
+
+    await user.type(screen.getByLabelText(/^email$/i), "invitee@example.com");
+    await user.type(screen.getByLabelText(/^password$/i), "MyP@ssw0rd1!");
+    await user.type(
+      screen.getByLabelText(/confirm password/i),
+      "MyP@ssw0rd1!",
+    );
+    await user.click(screen.getByRole("button", { name: /sign up/i }));
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(signUp).toHaveBeenCalledTimes(1);
+    const opts = signUp.mock.calls[0][0] as {
+      options?: { emailRedirectTo?: string };
+    };
+    expect(opts.options?.emailRedirectTo).toContain("/auth/callback?");
+    expect(opts.options?.emailRedirectTo).toContain(
+      encodeURIComponent("/invite/deadbeef0123456789"),
+    );
   });
 
   it("shows a network-themed message and logs when sign up throws", async () => {

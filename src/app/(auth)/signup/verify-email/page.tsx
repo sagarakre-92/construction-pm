@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { safeAppInternalPath } from "@/lib/auth/safe-app-path";
 import { cn } from "@/lib/utils";
 
 const COOLDOWN_SECONDS = 60;
@@ -15,6 +16,9 @@ function normalizeEmail(value: string): string {
 function VerifyEmailForm() {
   const searchParams = useSearchParams();
   const initialEmail = searchParams.get("email") ?? "";
+  const nextPath = safeAppInternalPath(searchParams.get("next"));
+  const loginHref =
+    nextPath != null ? `/login?redirect=${encodeURIComponent(nextPath)}` : "/login";
   const [email, setEmail] = useState(initialEmail);
   const [loading, setLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -73,10 +77,9 @@ function VerifyEmailForm() {
         return;
       }
       const supabase = createClient();
-      const callbackUrl =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback`
-          : undefined;
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const nextQuery = nextPath ? `?next=${encodeURIComponent(nextPath)}` : "";
+      const callbackUrl = origin ? `${origin}/auth/callback${nextQuery}` : undefined;
       const { error } = await supabase.auth.resend({
         type: "signup",
         email: normalized,
@@ -127,7 +130,7 @@ function VerifyEmailForm() {
         >
           This email is already verified.{" "}
           <Link
-            href="/login"
+            href={loginHref}
             className="font-medium underline hover:no-underline"
           >
             Log in
@@ -201,7 +204,7 @@ function VerifyEmailForm() {
       </form>
 
       <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
-        <Link href="/login" className="text-primary-600 hover:underline">
+        <Link href={loginHref} className="text-primary-600 hover:underline">
           Back to log in
         </Link>
       </p>

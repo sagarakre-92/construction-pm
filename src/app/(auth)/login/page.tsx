@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeEmail } from "@/lib/auth/email";
+import { safeAppInternalPath } from "@/lib/auth/safe-app-path";
 import { PasswordInput } from "@/components/ui/password-input";
 
 function LoginForm() {
@@ -15,6 +16,11 @@ function LoginForm() {
   const [verifiedMessage, setVerifiedMessage] = useState(false);
   const [resetMessage, setResetMessage] = useState(false);
   const searchParams = useSearchParams();
+  const inviteSafeRedirect = safeAppInternalPath(searchParams.get("redirect"));
+  const signUpHref =
+    inviteSafeRedirect != null
+      ? `/signup?next=${encodeURIComponent(inviteSafeRedirect)}`
+      : "/signup";
 
   useEffect(() => {
     const err = searchParams.get("error");
@@ -54,8 +60,9 @@ function LoginForm() {
         setError(signInError.message);
         return;
       }
-      const redirectTo = searchParams.get("redirect") || "/orat";
-      window.location.href = redirectTo.startsWith("/") ? redirectTo : "/orat";
+      const rawRedirect = searchParams.get("redirect");
+      const safeRedirect = safeAppInternalPath(rawRedirect) ?? "/orat";
+      window.location.href = safeRedirect;
       return;
     } catch (err) {
       const message =
@@ -149,7 +156,7 @@ function LoginForm() {
       </form>
       <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
         Don&apos;t have an account?{" "}
-        <Link href="/signup" className="text-primary-600 hover:underline">
+        <Link href={signUpHref} className="text-primary-600 hover:underline">
           Sign up
         </Link>
       </p>

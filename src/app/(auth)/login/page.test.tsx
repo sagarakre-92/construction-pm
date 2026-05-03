@@ -39,6 +39,17 @@ describe("LoginPage", () => {
     expect(link).toHaveAttribute("href", "/signup");
   });
 
+  it("preserves invite return path on sign up when redirect is an internal path", () => {
+    const invite = "/invite/deadbeef";
+    mockSearchParams.mockReturnValue(
+      paramsFrom(`redirect=${encodeURIComponent(invite)}`),
+    );
+    render(<LoginPage />);
+    const link = screen.getByRole("link", { name: /sign up/i });
+    expect(link.getAttribute("href")).toContain("/signup?");
+    expect(link.getAttribute("href")).toContain(encodeURIComponent(invite));
+  });
+
   it("has link to forgot-password page", () => {
     mockSearchParams.mockReturnValue(paramsFrom(""));
     render(<LoginPage />);

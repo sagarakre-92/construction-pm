@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeEmail } from "@/lib/auth/email";
+import { safeAppInternalPath } from "@/lib/auth/safe-app-path";
 import { PasswordInput } from "@/components/ui/password-input";
 import {
   MIN_PASSWORD_LENGTH,
@@ -26,7 +28,20 @@ function isUserAlreadyExistsError(err: { code?: string; message?: string }) {
   return false;
 }
 
-export default function SignUpPage() {
+function buildVerifyEmailUrl(email: string, nextPath: string | null): string {
+  const q = new URLSearchParams();
+  q.set("email", email);
+  if (nextPath) q.set("next", nextPath);
+  const suffix = q.toString();
+  return suffix ? `/signup/verify-email?${suffix}` : "/signup/verify-email";
+}
+
+function SignUpForm() {
+  const searchParams = useSearchParams();
+  const nextPath = safeAppInternalPath(searchParams.get("next"));
+  const loginHref =
+    nextPath != null ? `/login?redirect=${encodeURIComponent(nextPath)}` : "/login";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,8 +55,6 @@ export default function SignUpPage() {
   const showMismatch =
     !passwordsMatch && (confirmTouched || submitAttempted) && confirmPassword.length > 0;
 
-  // Submit is disabled when we know it would fail anyway (mismatch, too short,
-  // or below the minimum strength). Server enforces the same rules.
   const submitDisabled =
     loading ||
     !email ||
@@ -73,10 +86,10 @@ export default function SignUpPage() {
     setError(null);
     try {
       const supabase = createClient();
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const nextQuery = nextPath ? `?next=${encodeURIComponent(nextPath)}` : "";
       const callbackUrl =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback`
-          : undefined;
+        origin ? `${origin}/auth/callback${nextQuery}` : undefined;
       const normalized = normalizeEmail(email);
       const { error: signUpError } = await supabase.auth.signUp({
         email: normalized,
@@ -84,25 +97,17 @@ export default function SignUpPage() {
         options: callbackUrl ? { emailRedirectTo: callbackUrl } : undefined,
       });
       if (signUpError) {
-        // Anti-enumeration: never reveal that an account already exists.
-        // Take the user to the same verify-email screen a new signup hits;
-        // Supabase delivers a "you already have an account" email out of
-        // band that links to log in / reset password.
         if (isUserAlreadyExistsError(signUpError)) {
-          window.location.href = "/signup/verify-email";
+          window.location.href = buildVerifyEmailUrl(normalized, nextPath);
           return;
         }
-        // Surface the real error so the user (and operators reading the
-        // browser console) see what's wrong — e.g. SMTP send failures,
-        // rate limits, password-policy mismatches. Hiding everything
-        // behind "Something went wrong" makes prod issues invisible.
         console.error("signUp error", signUpError);
         setError(
           signUpError.message || "Something went wrong. Please try again.",
         );
         return;
       }
-      window.location.href = "/signup/verify-email";
+      window.location.href = buildVerifyEmailUrl(normalized, nextPath);
       return;
     } catch (err) {
       console.error("signUp threw", err);
@@ -212,10 +217,30 @@ export default function SignUpPage() {
       </form>
       <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
         Already have an account?{" "}
-        <Link href="/login" className="text-primary-600 hover:underline">
+        <Link href={loginHref} className="text-primary-600 hover:underline">
           Log in
         </Link>
       </p>
     </div>
+  );
+}
+
+function SignUpFormFallback() {
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-8 shadow-sm animate-pulse">
+      <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-32 mb-6" />
+      <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded mb-4" />
+      <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded mb-4" />
+      <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded mb-6" />
+      <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded w-full" />
+    </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={<SignUpFormFallback />}>
+      <SignUpForm />
+    </Suspense>
   );
 }

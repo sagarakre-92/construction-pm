@@ -131,3 +131,14 @@ export type Invitation = {
   /** Display name of the project for project-scoped invitations. */
   projectName?: string;
 };
+
+/** Public summary returned by `orat_preview_organization_invitation` for the invite landing page. */
+export type OrganizationInvitationPreview = {
+  organizationId: string;
+  organizationName: string;
+  invitedEmail: string;
+  invitedRole: string;
+  expiresAt: string;
+  projectId: string | null;
+  projectName: string | null;
+};

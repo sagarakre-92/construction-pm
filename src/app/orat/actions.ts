@@ -10,6 +10,7 @@ import type {
   TaskPriority,
   SavedView,
   SavedViewFilters,
+  OrganizationInvitationPreview,
 } from "./types";
 
 const VALID_PRIORITIES: ReadonlySet<TaskPriority> = new Set([
@@ -169,13 +170,10 @@ export async function completeOnboarding(
 // link to the UI which copies it to the clipboard.
 // import { sendInvitationEmail } from "@/lib/email";
 
-/** Create an organization invitation with first name, last name, email, title. Caller must be owner or admin. */
+/** Create an organization invitation by email (org profile fields on accept come from the invite row defaults). Caller must be owner or admin. */
 export async function createInvitation(
   organizationId: string,
   email: string,
-  firstName: string,
-  lastName: string,
-  title: string
 ): Promise<ActionResult<{ inviteLink: string; token: string }>> {
   const supabase = await createClient();
   const {
@@ -183,15 +181,14 @@ export async function createInvitation(
   } = await supabase.auth.getSession();
   if (!session?.user) return { error: "Not authenticated" };
 
-  const trimmedFirst = (firstName ?? "").trim();
   const trimmedEmail = email.trim();
 
   const { data, error } = await supabase.rpc("orat_create_organization_invitation", {
     p_organization_id: organizationId,
     p_email: trimmedEmail,
-    p_first_name: trimmedFirst,
-    p_last_name: (lastName ?? "").trim(),
-    p_title: (title ?? "").trim(),
+    p_first_name: "",
+    p_last_name: "",
+    p_title: "",
   });
 
   if (error) return { error: error.message };
@@ -235,7 +232,6 @@ export async function createInvitation(
     inviteUrl: absoluteInviteUrl,
     organizationName,
     inviterName,
-    recipientFirstName: trimmedFirst || undefined,
     expiresAt,
   });
 
@@ -360,6 +356,72 @@ export async function revokeInvitation(
 
   if (error) return { error: error.message };
   return { data: null };
+}
+
+/**
+ * Load invitation summary for the invite landing page. Does not require a session;
+ * the token is the secret. Used to show organization name before sign-in / accept.
+ */
+export async function previewOrganizationInvitation(
+  token: string,
+): Promise<ActionResult<OrganizationInvitationPreview>> {
+  const supabase = await createClient();
+  const trimmed = token?.trim() ?? "";
+  if (!trimmed) return { error: "Invalid invitation link" };
+
+  const { data, error } = await supabase.rpc("orat_preview_organization_invitation", {
+    p_token: trimmed,
+  });
+  if (error) return { error: error.message };
+
+  const out = data as {
+    error?: string;
+    ok?: boolean;
+    organization_id?: string;
+    organization_name?: string;
+    invited_email?: string;
+    invited_role?: string;
+    expires_at?: string;
+    project_id?: string | null;
+    project_name?: string | null;
+  } | null;
+
+  if (out && typeof out === "object" && typeof out.error === "string") {
+    return { error: out.error };
+  }
+
+  if (
+    out &&
+    out.ok === true &&
+    typeof out.organization_id === "string" &&
+    typeof out.organization_name === "string" &&
+    typeof out.invited_email === "string" &&
+    typeof out.invited_role === "string" &&
+    typeof out.expires_at === "string"
+  ) {
+    const projectId =
+      typeof out.project_id === "string" && out.project_id.length > 0
+        ? out.project_id
+        : null;
+    const projectName =
+      typeof out.project_name === "string" && out.project_name.length > 0
+        ? out.project_name
+        : null;
+
+    return {
+      data: {
+        organizationId: out.organization_id,
+        organizationName: out.organization_name,
+        invitedEmail: out.invited_email,
+        invitedRole: out.invited_role,
+        expiresAt: out.expires_at,
+        projectId,
+        projectName,
+      },
+    };
+  }
+
+  return { error: "Invalid invitation" };
 }
 
 /**

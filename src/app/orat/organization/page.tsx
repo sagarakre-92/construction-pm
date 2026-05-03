@@ -7,6 +7,7 @@ import {
 } from "@/app/orat/actions";
 import { Button } from "@/components/ui/button";
 import { OrganizationInviteForm } from "./OrganizationInviteForm";
+import { OrganizationPendingInvitations } from "./OrganizationPendingInvitations";
 
 export default async function OrganizationPage() {
   const [orgRes, role] = await Promise.all([
@@ -65,35 +66,7 @@ export default async function OrganizationPage() {
         <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">
           Pending invitations
         </h2>
-        {pendingInvitations.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            No pending invitations.
-          </p>
-        ) : (
-          <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
-            {pendingInvitations.map((inv) => (
-              <li
-                key={inv.id}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
-              >
-                <div className="min-w-0">
-                  <span className="font-medium text-slate-900 dark:text-white">
-                    {[inv.first_name, inv.last_name].filter(Boolean).join(" ").trim() || inv.email}
-                  </span>
-                  {inv.email && (inv.first_name || inv.last_name) && (
-                    <span className="ml-1 text-slate-500 dark:text-slate-400">({inv.email})</span>
-                  )}
-                  {inv.title && (
-                    <span className="ml-1 text-slate-500 dark:text-slate-400">· {inv.title}</span>
-                  )}
-                </div>
-                <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                  {inv.role}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <OrganizationPendingInvitations initialInvitations={pendingInvitations} />
       </section>
 
       <section className="space-y-3">

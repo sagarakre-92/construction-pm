@@ -1,8 +1,6 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { acceptInvitation } from "@/app/orat/actions";
-import { Button } from "@/components/ui/button";
+import { previewOrganizationInvitation } from "@/app/orat/actions";
+import { InviteJoinClient } from "./InviteJoinClient";
 
 type Props = { params: Promise<{ token: string }> };
 
@@ -10,44 +8,58 @@ export default async function InviteAcceptPage({ params }: Props) {
   const { token } = await params;
   if (!token?.trim()) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
-        <p className="text-red-600 dark:text-red-400">
-          This invitation link is no longer valid.
-        </p>
-        <Button asChild variant="outline">
-          <Link href="/orat">Go to app</Link>
-        </Button>
-      </div>
+      <InviteJoinClient
+        token=""
+        preview={{ error: "Invalid invitation link" }}
+        isAuthenticated={false}
+        sessionEmail={null}
+      />
     );
   }
 
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const trimmed = token.trim();
 
-  if (!session?.user) {
-    redirect(`/login?redirect=${encodeURIComponent(`/invite/${token}`)}`);
-  }
+  try {
+    const previewRes = await previewOrganizationInvitation(trimmed);
+    const preview =
+      "error" in previewRes ? { error: previewRes.error } : previewRes.data;
 
-  const result = await acceptInvitation(token);
+    const supabase = await createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-  if ("error" in result) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 text-center">
-        <p className="text-red-600 dark:text-red-400">
-          This invitation is no longer valid: {result.error}
-        </p>
-        <Button asChild variant="outline">
-          <Link href="/orat">Go to app</Link>
-        </Button>
+      <InviteJoinClient
+        token={trimmed}
+        preview={preview}
+        isAuthenticated={Boolean(session?.user)}
+        sessionEmail={session?.user?.email ?? null}
+      />
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    const missingEnv =
+      message.includes("Missing Supabase env") || message.includes("Supabase env vars");
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
+          {missingEnv ? "Supabase is not configured" : "Could not load this page"}
+        </h1>
+        {missingEnv ? (
+          <p className="max-w-md text-sm text-slate-600 dark:text-slate-400">
+            Add <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+            <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to{" "}
+            <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">.env.local</code> (see{" "}
+            <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">.env.local.example</code>
+            ), then restart <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">npm run dev</code>.
+          </p>
+        ) : (
+          <p className="max-w-md text-sm text-red-600 dark:text-red-400" role="alert">
+            {process.env.NODE_ENV === "development" ? message : "Check the server terminal for details."}
+          </p>
+        )}
       </div>
     );
   }
-
-  if (result.data.projectId) {
-    redirect(`/orat?project=${result.data.projectId}&welcome=1`);
-  }
-
-  redirect("/orat");
 }
