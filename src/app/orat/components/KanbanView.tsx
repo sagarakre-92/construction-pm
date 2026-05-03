@@ -12,7 +12,6 @@ import {
   formatDate,
   isOverdue,
 } from "../utils/task-utils";
-import { cn } from "@/lib/utils";
 
 const COLUMNS: { status: TaskStatus; title: string }[] = [
   { status: "Not Started", title: "Not Started" },
