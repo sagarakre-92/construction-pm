@@ -130,30 +130,11 @@ Spec: `e2e/group-tasks-in-list.feature`
 
 ---
 
-## Phase 5 — Saved views (~5 min)
+## Phase 5 — Saved views (deferred)
 
-Spec: `e2e/saved-task-views.feature`
-
-- [ ] Stay in List view (or use Board — your choice)
-- [ ] Set some filters: e.g. assignee filter = **My tasks**, plus group-by = **Status**
-- [ ] Find the **Saved views** menu (usually near the top of the dashboard) → click "Save current as..." (or similar)
-- [ ] Name the view **"My weekly review"** → save
-- [ ] **"My weekly review"** appears in the saved-views menu
-
-- [ ] Reload the page → "My weekly review" is still in the menu (proves it persisted to the database, not just memory)
-
-- [ ] Change the assignee filter to **All** (different from what you saved)
-- [ ] Click "My weekly review" in the menu
-- [ ] Filter snaps back to **My tasks** + group-by = Status
-- [ ] URL bar shows `/orat?view=<some-uuid>` (this is the shareable link)
-
-- [ ] While the view is open, change one filter (e.g. group-by → Assignee) → click **Update** (in the saved-views menu)
-- [ ] Open a different view or navigate away, then re-open "My weekly review" → the new group-by is now the saved one
-
-- [ ] Click **Copy share link** (or copy the URL from the address bar)
-- [ ] In an incognito window, paste the URL → sign in as `admin@orat.dev` again → same filters apply (the link works)
-
-- [ ] Back in the regular window: open the saved-views menu → **delete** "My weekly review" → it disappears
+Saved / shareable filtered views are **not in the product UI** right now (the
+dashboard has no “Saved views” menu). Skip this phase. Migration `019` may
+still create `orat_saved_views` for a future release.
 
 ---
 

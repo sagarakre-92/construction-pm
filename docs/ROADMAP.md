@@ -19,7 +19,7 @@ For reference. All 8 issues closed; see `docs/P0_TESTING_CHECKLIST.md`.
 | `orat-apw` | Overdue swimlane on the Board | `e2e/overdue-tasks-visible-on-board.feature` |
 | `orat-uk8` | Task priority H/M/L | `e2e/task-priority.feature` |
 | `orat-den` | Group-by in the List view | `e2e/group-tasks-in-list.feature` |
-| `orat-gb0` | Saved & shareable filtered views | `e2e/saved-task-views.feature` |
+| `orat-gb0` | Saved & shareable filtered views | Deferred (UI not shipped; see migration 019) |
 | `orat-8za` | Send invitation emails automatically | `e2e/invitation-email-delivery.feature` |
 | `orat-ov9` | Pending invitations visible & manageable | `e2e/pending-invitations-visible-and-managed.feature` |
 | `orat-pjv` | Project-scoped invitations | `e2e/invite-collaborator-to-project.feature` |

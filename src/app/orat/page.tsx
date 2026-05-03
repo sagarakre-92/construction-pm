@@ -27,11 +27,6 @@ import { ArchiveProjectDialog } from "./components/ArchiveProjectDialog";
 import { TaskDialog } from "./components/TaskDialog";
 import { ProjectTeamView } from "./components/ProjectTeamView";
 import { EmptyState } from "./components/EmptyState";
-// [agent-C] BEGIN saved-views imports
-import { SavedViewsMenu } from "./components/SavedViewsMenu";
-import type { SavedView, SavedViewFilters } from "./types";
-import { getSavedView } from "./actions";
-// [agent-C] END saved-views imports
 import type { Project, Task, TaskStatus, InternalUser } from "./types";
 import {
   getCurrentUserId,
@@ -106,11 +101,6 @@ export default function ORATPage() {
   const [taskDialogMode, setTaskDialogMode] = useState<"create" | "edit">("create");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // [agent-C] BEGIN saved-views state
-  const [activeViewId, setActiveViewId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<SavedView | null>(null);
-  // [agent-C] END saved-views state
-
   const FETCH_TIMEOUT_MS = 10000;
 
   const fetchData = useCallback(async (options?: { silent?: boolean }) => {
@@ -166,98 +156,6 @@ export default function ORATPage() {
     }, 12000);
     return () => clearTimeout(t);
   }, []);
-
-  // [agent-C] BEGIN saved-views: apply filters helper
-  const applySavedViewFilters = useCallback((filters: SavedViewFilters) => {
-    if (filters.assigneeFilter) {
-      const candidate = filters.assigneeFilter;
-      if (
-        candidate === "all" ||
-        candidate === "my-tasks" ||
-        candidate === "internal" ||
-        candidate === "external"
-      ) {
-        setTaskFilter(candidate);
-      }
-    }
-    if (filters.viewMode) {
-      const v = filters.viewMode;
-      if (v === "board") setView("board");
-      else if (v === "list") setView("list");
-      else if (v === "gantt") setView("timeline");
-    }
-    if (typeof filters.projectId === "string" && filters.projectId.length > 0) {
-      setCurrentProjectId(filters.projectId);
-    } else if (filters.projectId === null) {
-      setCurrentProjectId("all-projects");
-    }
-  }, []);
-
-  const updateUrlViewParam = useCallback((viewId: string | null) => {
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    if (viewId) url.searchParams.set("view", viewId);
-    else url.searchParams.delete("view");
-    window.history.replaceState({}, "", url.toString());
-  }, []);
-
-  // On mount and on `popstate`, load `?view=<id>` and apply its filters.
-  useEffect(() => {
-    const loadFromUrl = async () => {
-      if (typeof window === "undefined") return;
-      const url = new URL(window.location.href);
-      const id = url.searchParams.get("view");
-      if (!id) {
-        setActiveViewId(null);
-        setActiveView(null);
-        return;
-      }
-      setActiveViewId(id);
-      const res = await getSavedView(id);
-      if ("error" in res) {
-        toast.error(res.error);
-        setActiveView(null);
-        return;
-      }
-      if (!res.data) {
-        toast.error("Saved view not found");
-        setActiveView(null);
-        return;
-      }
-      setActiveView(res.data);
-      applySavedViewFilters(res.data.filters);
-    };
-    loadFromUrl();
-    window.addEventListener("popstate", loadFromUrl);
-    return () => window.removeEventListener("popstate", loadFromUrl);
-  }, [applySavedViewFilters]);
-
-  const handleSelectSavedView = useCallback(
-    (view: SavedView) => {
-      setActiveViewId(view.id);
-      setActiveView(view);
-      updateUrlViewParam(view.id);
-      applySavedViewFilters(view.filters);
-    },
-    [applySavedViewFilters, updateUrlViewParam],
-  );
-
-  const handleClearActiveView = useCallback(() => {
-    setActiveViewId(null);
-    setActiveView(null);
-    updateUrlViewParam(null);
-  }, [updateUrlViewParam]);
-
-  const currentSavedViewFilters = useMemo<SavedViewFilters>(() => {
-    const viewMode: SavedViewFilters["viewMode"] =
-      view === "timeline" ? "gantt" : view;
-    return {
-      projectId: currentProjectId === "all-projects" ? null : currentProjectId,
-      assigneeFilter: taskFilter,
-      viewMode,
-    };
-  }, [view, taskFilter, currentProjectId]);
-  // [agent-C] END saved-views: apply filters helper
 
   // [agent-D2] BEGIN — show welcome toast for project-scoped invitees and strip query params
   const welcomeShownRef = useRef(false);
@@ -806,16 +704,6 @@ export default function ORATPage() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <TaskFilterDropdown value={taskFilter} onChange={setTaskFilter} />
-              {/* [agent-C] BEGIN saved-views menu */}
-              <SavedViewsMenu
-                currentFilters={currentSavedViewFilters}
-                activeViewId={activeViewId}
-                activeView={activeView}
-                currentUserId={currentUserId}
-                onSelectView={handleSelectSavedView}
-                onClearActiveView={handleClearActiveView}
-              />
-              {/* [agent-C] END saved-views menu */}
               {!isAllProjects && currentProject && (
                 <Button
                   size="sm"

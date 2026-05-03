@@ -136,35 +136,11 @@ Spec: `e2e/group-tasks-in-list.feature`
 
 ---
 
-## 4. Story `orat-gb0` — Saved & shareable filtered views
+## 4. Story `orat-gb0` — Saved & shareable filtered views (deferred)
 
-Spec: `e2e/saved-task-views.feature` · Migration **019**
-
-```
-- [ ] On the dashboard, set some filters:
-        - select a project
-        - filter assignee to "My tasks"
-        - (optionally) group by something
-- [ ] Open the "Saved views" menu and click "Save current as…"
-- [ ] Name the view "Test view A" and save
-        ⤷ "Test view A" appears in the menu
-- [ ] Reload the page
-        ⤷ "Test view A" still appears in the menu
-- [ ] Open "Test view A"
-        ⤷ URL becomes /orat?view=<id>
-        ⤷ all the captured filters are re-applied
-- [ ] Change one filter while in a saved view, click "Update"
-        ⤷ next time you open the view, the new filter is applied
-- [ ] Click "Copy share link" while a saved view is loaded
-        ⤷ the URL with ?view=<id> is in your clipboard
-- [ ] Open that link in an incognito window, sign in as a DIFFERENT user
-      who is in the SAME organization
-        ⤷ they see the same filters applied (within their RLS scope)
-- [ ] Sign in as a user from a DIFFERENT organization
-        ⤷ they cannot load the view (RLS blocks; expect empty/redirect)
-- [ ] Delete "Test view A" from the menu
-        ⤷ it disappears from your menu (and from any teammate's menu)
-```
+The dashboard **does not** expose saved views yet (no menu, no `?view=` flow).
+Migration **019** may still be applied for the `orat_saved_views` table; skip
+manual QA for this story until the feature ships.
 
 ---
 
