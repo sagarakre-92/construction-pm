@@ -3,9 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import Link from "next/link";
-import { acceptInvitation } from "@/app/orat/actions";
+import { acceptInvitationWithProfile } from "@/app/orat/actions";
 import type { OrganizationInvitationPreview } from "@/app/orat/types";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -35,16 +37,32 @@ export function InviteJoinClient({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [role, setRole] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const invitePath = `/invite/${encodeURIComponent(token)}`;
-  const loginHref = `/login?redirect=${encodeURIComponent(invitePath)}`;
-  const signupHref = `/signup?next=${encodeURIComponent(invitePath)}`;
+  const invitedEmailForLinks =
+    "error" in preview ? "" : preview.invitedEmail.trim();
+  const emailQuery =
+    invitedEmailForLinks !== ""
+      ? `&email=${encodeURIComponent(invitedEmailForLinks)}`
+      : "";
+  const loginHref = `/login?redirect=${encodeURIComponent(invitePath)}${emailQuery}`;
+  const signupHref = `/signup?next=${encodeURIComponent(invitePath)}${emailQuery}`;
 
   const handleAccept = useCallback(() => {
     setAcceptError(null);
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    const r = role.trim();
+    if (!fn || !ln || !r) {
+      setAcceptError("Please enter your first name, last name, and role.");
+      return;
+    }
     startTransition(async () => {
-      const result = await acceptInvitation(token);
+      const result = await acceptInvitationWithProfile(token, fn, ln, r);
       if ("error" in result) {
         setAcceptError(result.error);
         return;
@@ -56,7 +74,7 @@ export function InviteJoinClient({
       }
       router.push("/orat");
     });
-  }, [router, token]);
+  }, [router, token, firstName, lastName, role]);
 
   if ("error" in preview) {
     const err = preview.error;
@@ -167,8 +185,19 @@ export function InviteJoinClient({
         ) : null}
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) {
+            setAcceptError(null);
+            setFirstName("");
+            setLastName("");
+            setRole("");
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Join {p.organizationName}?</DialogTitle>
             <DialogDescription>
@@ -177,6 +206,56 @@ export function InviteJoinClient({
                 : `You will be added to ${p.organizationName} as a ${p.invitedRole}.`}
             </DialogDescription>
           </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="invite-org-name">Organization</Label>
+              <Input
+                id="invite-org-name"
+                readOnly
+                value={
+                  p.projectId && p.projectName
+                    ? `${p.organizationName} — ${p.projectName}`
+                    : p.organizationName
+                }
+                className="bg-slate-50 dark:bg-slate-900"
+                tabIndex={-1}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="invite-first">First name</Label>
+              <Input
+                id="invite-first"
+                autoComplete="given-name"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                disabled={isPending}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="invite-last">Last name</Label>
+              <Input
+                id="invite-last"
+                autoComplete="family-name"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                disabled={isPending}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="invite-role">Role</Label>
+              <Input
+                id="invite-role"
+                autoComplete="organization-title"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                placeholder="e.g. Project Manager"
+                disabled={isPending}
+                required
+              />
+            </div>
+          </div>
           {acceptError ? (
             <p className="text-sm text-red-600 dark:text-red-400" role="alert">
               {acceptError}

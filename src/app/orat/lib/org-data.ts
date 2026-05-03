@@ -125,6 +125,39 @@ export async function getCurrentOrganization(): Promise<
   };
 }
 
+/**
+ * If the signed-in user has no organization but has a pending org invitation
+ * matching their auth email, returns `/invite/{token}` so the app can redirect
+ * them off the create-organization onboarding path.
+ */
+export async function getPendingOrganizationInvitePathForCurrentUser(): Promise<
+  ActionResult<string | null>
+> {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { data, error } = await supabase.rpc(
+    "orat_get_pending_organization_invite_token_for_user",
+  );
+  if (error) return { error: error.message };
+
+  const out = data as
+    | { ok?: boolean; token?: string | null; error?: string }
+    | null;
+  if (out && typeof out.error === "string") return { error: out.error };
+  const token =
+    out &&
+    typeof out.token === "string" &&
+    out.token.length > 0
+      ? out.token
+      : null;
+  if (!token) return { data: null };
+  return { data: `/invite/${encodeURIComponent(token)}` };
+}
+
 /** Current user's role in their organization (owner, admin, member) or null. */
 export async function getCurrentUserOrgRole(): Promise<
   "owner" | "admin" | "member" | null

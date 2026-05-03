@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -20,6 +20,21 @@ import {
  * the verify-email page (and let Supabase's own duplicate-signup email steer
  * them to log in or reset).
  */
+function isInviteNext(path: string | null): boolean {
+  return path != null && path.startsWith("/invite/");
+}
+
+/** When signing up from an invite link, lock email to the query value if valid. */
+function lockedInviteEmail(
+  raw: string | null,
+  nextPath: string | null,
+): string | null {
+  if (!isInviteNext(nextPath) || !raw?.trim()) return null;
+  const n = normalizeEmail(raw);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n)) return null;
+  return n;
+}
+
 function isUserAlreadyExistsError(err: { code?: string; message?: string }) {
   if (err.code === "user_already_exists") return true;
   if (typeof err.message === "string" && /already.*registered/i.test(err.message)) {
@@ -39,6 +54,10 @@ function buildVerifyEmailUrl(email: string, nextPath: string | null): string {
 function SignUpForm() {
   const searchParams = useSearchParams();
   const nextPath = safeAppInternalPath(searchParams.get("next"));
+  const lockedEmail = useMemo(
+    () => lockedInviteEmail(searchParams.get("email"), nextPath),
+    [searchParams, nextPath],
+  );
   const loginHref =
     nextPath != null ? `/login?redirect=${encodeURIComponent(nextPath)}` : "/login";
 
@@ -62,6 +81,10 @@ function SignUpForm() {
     !strength.meetsPolicy ||
     !passwordsMatch ||
     confirmPassword.length === 0;
+
+  useEffect(() => {
+    if (lockedEmail) setEmail(lockedEmail);
+  }, [lockedEmail]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -147,10 +170,17 @@ function SignUpForm() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            readOnly={Boolean(lockedEmail)}
             required
-            className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent read-only:bg-slate-50 read-only:dark:bg-slate-900/60"
             placeholder="you@example.com"
+            aria-readonly={lockedEmail ? true : undefined}
           />
+          {lockedEmail ? (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              This address matches your invitation and cannot be changed here.
+            </p>
+          ) : null}
         </div>
         <div>
           <label

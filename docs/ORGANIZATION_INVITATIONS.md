@@ -3,7 +3,7 @@
 ## Overview
 
 - **Who can invite:** Organization owners and admins only (enforced in DB and server).
-- **Flow:** Owner/admin creates an invitation (email + role) → system generates a secure token and invite link → invitee opens link → if not logged in, signs in (or signs up) → invite is accepted and user is added to the organization.
+- **Flow:** Owner/admin creates an invitation (email + role) → system generates a secure token and invite link → invitee opens link → if not logged in, signs in (or signs up with email + `next` preserved) → completes profile on the invite screen → accept adds them to the organization (see **New user flow** below).
 
 ## Invite link
 
@@ -23,12 +23,19 @@ The server action **`createInvitation`** calls **`sendInvitationEmail`** (`src/l
 
 To deliver real email in production, set **`RESEND_API_KEY`** (and optionally **`EMAIL_FROM`** with a sender on a domain you have verified in Resend). See `.env.local.example`.
 
-Legacy note: Supabase Auth’s built-in “invite user” is a different flow; ORAT uses custom tokens in `organization_invitations`, so outbound mail goes through Resend (or the console fallback above), not Supabase’s invite template alone.
+Legacy note: Supabase Auth’s built-in “invite user” is a different flow; Alino uses custom tokens in `organization_invitations`, so outbound mail goes through Resend (or the console fallback above), not Supabase’s invite template alone.
 
 ## Environment
 
 - **`NEXT_PUBLIC_APP_URL`** (optional): Full app URL (e.g. `https://yourapp.com`). Used to build the invite link returned to the client and for logging. If unset, the link is relative (`/invite/{token}`); the UI can still build a full URL with `window.location.origin` for copy.
 - **`VERCEL_URL`**: On Vercel this is set automatically; the action uses it to build the invite link when `NEXT_PUBLIC_APP_URL` is not set.
+
+## New user flow (sign up from invite)
+
+1. The invite page links to **`/signup?next=/invite/{token}&email=…`** so the email field is pre-filled and read-only, and **`/login?redirect=…&email=…`** for the same prefill on sign-in.
+2. Supabase **`emailRedirectTo`** includes **`/auth/callback?next=…`** so after email verification the session returns to the invite page.
+3. If the user hits **`/orat`** or **`/onboarding`** before accepting while a **pending** org invite still matches their auth email and they are **not** in any org, the app redirects to **`/invite/{token}`** (RPC **`orat_get_pending_organization_invite_token_for_user`** in migration `022_pending_invite_token_for_user.sql`).
+4. **Accept invitation** collects first name, last name, and role, then runs **`acceptInvitationWithProfile`** (accept RPC + profile upsert) so they are not sent through “create your organization” onboarding.
 
 ## Security
 

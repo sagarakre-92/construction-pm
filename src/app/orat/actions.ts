@@ -112,6 +112,11 @@ export async function getCurrentOrganization() {
   return (await import("./lib/org-data")).getCurrentOrganization();
 }
 
+/** When the user has no org, returns `/invite/{token}` if a pending org invite matches their email. */
+export async function getPendingOrganizationInvitePath() {
+  return (await import("./lib/org-data")).getPendingOrganizationInvitePathForCurrentUser();
+}
+
 /** Creates a new organization and adds the current user as owner. For onboarding (user must not already belong to an org). */
 export async function createOrganization(name: string): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient();
@@ -501,6 +506,48 @@ export async function acceptInvitation(
   }
   if (out && typeof out === "object" && out.ok) return { data: { ok: true } };
   return { error: "Invalid invitation" };
+}
+
+/**
+ * Accept an org invitation, then persist profile fields (first name, last name,
+ * role) so invitees complete profile on the invite screen instead of onboarding.
+ */
+export async function acceptInvitationWithProfile(
+  token: string,
+  firstName: string,
+  lastName: string,
+  role: string,
+): Promise<ActionResult<AcceptInvitationResult>> {
+  const trimmedFirst = (firstName ?? "").trim();
+  const trimmedLast = (lastName ?? "").trim();
+  const trimmedRole = (role ?? "").trim();
+  if (!trimmedFirst || !trimmedLast || !trimmedRole) {
+    return { error: "First name, last name, and role are required." };
+  }
+
+  const acceptRes = await acceptInvitation(token);
+  if ("error" in acceptRes) return acceptRes;
+
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) return { error: "Not authenticated" };
+
+  const { error: profileError } = await supabase.from("profiles").upsert(
+    {
+      id: session.user.id,
+      first_name: trimmedFirst,
+      last_name: trimmedLast,
+      role: trimmedRole,
+      company: "",
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
+  if (profileError) return { error: profileError.message };
+
+  return acceptRes;
 }
 
 /**

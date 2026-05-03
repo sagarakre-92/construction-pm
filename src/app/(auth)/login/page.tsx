@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -17,10 +17,22 @@ function LoginForm() {
   const [resetMessage, setResetMessage] = useState(false);
   const searchParams = useSearchParams();
   const inviteSafeRedirect = safeAppInternalPath(searchParams.get("redirect"));
-  const signUpHref =
-    inviteSafeRedirect != null
-      ? `/signup?next=${encodeURIComponent(inviteSafeRedirect)}`
-      : "/signup";
+  const signUpHref = useMemo(() => {
+    if (inviteSafeRedirect == null) return "/signup";
+    const base = `/signup?next=${encodeURIComponent(inviteSafeRedirect)}`;
+    const raw = searchParams.get("email");
+    if (!raw?.trim()) return base;
+    const n = normalizeEmail(raw);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n)) return base;
+    return `${base}&email=${encodeURIComponent(n)}`;
+  }, [inviteSafeRedirect, searchParams]);
+
+  useEffect(() => {
+    const q = searchParams.get("email");
+    if (!q?.trim()) return;
+    const n = normalizeEmail(q);
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n)) setEmail(n);
+  }, [searchParams]);
 
   useEffect(() => {
     const err = searchParams.get("error");

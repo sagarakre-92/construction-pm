@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Toaster } from "sonner";
-import { getCurrentOrganization } from "./actions";
+import { getCurrentOrganization, getPendingOrganizationInvitePath } from "./actions";
 
 export default async function ORATLayout({
   children,
@@ -14,7 +14,13 @@ export default async function ORATLayout({
     redirect("/login");
   }
   if ("error" in orgRes) redirect("/login");
-  if (!orgRes.data) redirect("/onboarding");
+  if (!orgRes.data) {
+    const pending = await getPendingOrganizationInvitePath();
+    if (!("error" in pending) && pending.data) {
+      redirect(pending.data);
+    }
+    redirect("/onboarding");
+  }
 
   return (
     <div className="flex h-screen min-h-0 min-w-0 overflow-hidden bg-slate-50 dark:bg-slate-900">

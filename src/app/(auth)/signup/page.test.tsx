@@ -179,6 +179,21 @@ describe("SignUpPage", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("pre-fills and locks email when next is an invite link and email query is set", () => {
+    getSearchParams.mockReturnValue(
+      new URLSearchParams(
+        `next=${encodeURIComponent("/invite/deadbeef0123456789")}&email=${encodeURIComponent("Invited@Example.com")}`,
+      ),
+    );
+    render(<SignUpPage />);
+    const emailInput = screen.getByLabelText(/^email$/i) as HTMLInputElement;
+    expect(emailInput.value).toBe("invited@example.com");
+    expect(emailInput.readOnly).toBe(true);
+    expect(
+      screen.getByText(/matches your invitation/i),
+    ).toBeInTheDocument();
+  });
+
   it("includes next in emailRedirectTo when signing up from an invitation", async () => {
     getSearchParams.mockReturnValue(
       new URLSearchParams(

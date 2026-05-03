@@ -50,6 +50,23 @@ describe("LoginPage", () => {
     expect(link.getAttribute("href")).toContain(encodeURIComponent(invite));
   });
 
+  it("prefills email and forwards email to sign-up link for invite login", () => {
+    mockSearchParams.mockReturnValue(
+      paramsFrom(
+        `redirect=${encodeURIComponent("/invite/tok123")}&email=${encodeURIComponent("Invited@Example.com")}`,
+      ),
+    );
+    render(<LoginPage />);
+    expect((screen.getByLabelText(/email/i) as HTMLInputElement).value).toBe(
+      "invited@example.com",
+    );
+    const link = screen.getByRole("link", { name: /sign up/i });
+    expect(link.getAttribute("href")).toContain("email=");
+    expect(link.getAttribute("href")).toContain(
+      encodeURIComponent("invited@example.com"),
+    );
+  });
+
   it("has link to forgot-password page", () => {
     mockSearchParams.mockReturnValue(paramsFrom(""));
     render(<LoginPage />);
