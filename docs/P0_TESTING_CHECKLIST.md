@@ -36,7 +36,7 @@ Append to `.env.local` (see `.env.local.example` for the new keys):
 ```bash
 # Optional — invitation emails. Without it, emails go to stdout (dev mode).
 RESEND_API_KEY=
-EMAIL_FROM="ORAT <noreply@your-domain>"
+EMAIL_FROM="Alino <noreply@your-domain>"
 ```
 
 ```

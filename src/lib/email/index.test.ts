@@ -20,12 +20,21 @@ import { sendInvitationEmail } from "./index";
 
 const ORIGINAL_RESEND_KEY = process.env.RESEND_API_KEY;
 const ORIGINAL_EMAIL_FROM = process.env.EMAIL_FROM;
+const ORIGINAL_VERCEL = process.env.VERCEL;
+const ORIGINAL_VERCEL_ENV = process.env.VERCEL_ENV;
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 function restoreEnv() {
   if (ORIGINAL_RESEND_KEY === undefined) delete process.env.RESEND_API_KEY;
   else process.env.RESEND_API_KEY = ORIGINAL_RESEND_KEY;
   if (ORIGINAL_EMAIL_FROM === undefined) delete process.env.EMAIL_FROM;
   else process.env.EMAIL_FROM = ORIGINAL_EMAIL_FROM;
+  if (ORIGINAL_VERCEL === undefined) delete process.env.VERCEL;
+  else process.env.VERCEL = ORIGINAL_VERCEL;
+  if (ORIGINAL_VERCEL_ENV === undefined) delete process.env.VERCEL_ENV;
+  else process.env.VERCEL_ENV = ORIGINAL_VERCEL_ENV;
+  if (ORIGINAL_NODE_ENV === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = ORIGINAL_NODE_ENV;
 }
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -75,6 +84,7 @@ describe("sendInvitationEmail", () => {
       });
 
       expect(result.ok).toBe(true);
+      expect(result.delivered).toBe(false);
       expect(fetchMock).not.toHaveBeenCalled();
       const consoleOutput = (consoleInfoSpy?.mock.calls ?? [])
         .flat()
@@ -104,6 +114,7 @@ describe("sendInvitationEmail", () => {
       });
 
       expect(result.ok).toBe(true);
+      expect(result.delivered).toBe(true);
       expect(result.providerMessageId).toBe("msg_123");
       expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -134,7 +145,7 @@ describe("sendInvitationEmail", () => {
       expect(body.text).toContain("https://app.example.com/invite/xyz");
     });
 
-    it("uses EMAIL_FROM when set; falls back to default ORAT sender otherwise", async () => {
+    it("uses EMAIL_FROM when set; falls back to default Alino sender otherwise", async () => {
       process.env.EMAIL_FROM = "Custom Sender <hello@custom.dev>";
       const fetchMock = mockFetch({
         ok: true,
@@ -169,6 +180,7 @@ describe("sendInvitationEmail", () => {
       const defaultBody = JSON.parse(
         fetchMock2.mock.calls[0][1].body as string,
       ) as { from: string };
+      expect(defaultBody.from).toContain("Alino");
       expect(defaultBody.from).toMatch(/noreply@alinoapp\.com/);
     });
 
@@ -187,6 +199,7 @@ describe("sendInvitationEmail", () => {
       });
 
       expect(result.ok).toBe(false);
+      expect(result.delivered).toBe(false);
       expect(result.error).toMatch(/Invalid recipient address|422/);
     });
 
@@ -204,6 +217,7 @@ describe("sendInvitationEmail", () => {
       });
 
       expect(result.ok).toBe(false);
+      expect(result.delivered).toBe(false);
       expect(result.error).toContain("Network is down");
     });
   });
@@ -263,6 +277,67 @@ describe("sendInvitationEmail", () => {
       };
       expect(body.html).toContain("Solo Org");
       expect(body.html).toContain("Solo Inviter");
+    });
+  });
+
+  describe("production delivery requirement (no Resend key)", () => {
+    it("fails on Vercel production when RESEND_API_KEY is unset", async () => {
+      process.env.VERCEL = "1";
+      process.env.VERCEL_ENV = "production";
+      process.env.NODE_ENV = "production";
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await sendInvitationEmail({
+        to: "maria@example.com",
+        inviteUrl: "https://app.example.com/invite/abc",
+        organizationName: "Acme",
+        inviterName: "Jane Doe",
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.delivered).toBe(false);
+      expect(result.error).toMatch(/RESEND_API_KEY/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("uses the console provider on Vercel preview when the key is unset", async () => {
+      process.env.VERCEL = "1";
+      process.env.VERCEL_ENV = "preview";
+      process.env.NODE_ENV = "production";
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await sendInvitationEmail({
+        to: "maria@example.com",
+        inviteUrl: "https://app.example.com/invite/abc",
+        organizationName: "Acme",
+        inviterName: "Jane Doe",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.delivered).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("fails on non-Vercel Node production when the key is unset", async () => {
+      delete process.env.VERCEL;
+      delete process.env.VERCEL_ENV;
+      process.env.NODE_ENV = "production";
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await sendInvitationEmail({
+        to: "x@y.com",
+        inviteUrl: "https://app.example.com/invite/t",
+        organizationName: "Org",
+        inviterName: "Inviter",
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.delivered).toBe(false);
+      expect(result.error).toMatch(/RESEND_API_KEY/i);
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });

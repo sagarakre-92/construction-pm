@@ -11,23 +11,19 @@
 - **Token:** 64-char hex, unique, stored in `organization_invitations.token`.
 - **Expiry:** Invitations expire 7 days after creation (configurable in migration `015_organization_invitations.sql`: `expires_at` default).
 
-## Sending the invite email (recommended approach)
+## Sending the invite email
 
-Right now the app **does not send email**. After creating an invite, the server logs the link and the UI can copy it to the clipboard. To actually email the link:
+The server action **`createInvitation`** calls **`sendInvitationEmail`** (`src/lib/email/index.ts`) immediately after the invitation row is created.
 
-1. **Option A – Supabase Auth (custom email):**  
-   Use a custom email template or Supabase’s “Invite user by email” if you want to rely on Supabase. Our flow is custom (invite token, not Supabase invite), so you’d still need to trigger your own “send email” step with the invite link.
+| Environment | `RESEND_API_KEY` | Behavior |
+|-------------|------------------|----------|
+| **Vercel Production** (`VERCEL_ENV=production`) | Set | Invitation email is sent via [Resend](https://resend.com). |
+| **Vercel Production** | Unset | Send **fails** with a clear error; the invitation row is rolled back so users are not told an email was sent when none can be delivered. |
+| **Local / Preview / test** | Unset | **Console provider**: the invite URL is logged to stdout; the UI explains that no inbox email was sent and copies the link to the clipboard. |
 
-2. **Option B – Your own email provider (recommended):**  
-   - Add a service (e.g. Resend, SendGrid, Postmark, AWS SES).
-   - After `createInvitation` succeeds, call your email API with:
-     - To: `invite.email`
-     - Subject: e.g. “You’re invited to join {orgName}”
-     - Body: include the invite link: `inviteLink` returned from the action (or build `{baseUrl}/invite/{token}`).
-   - You can do this in the same server action after the RPC, or in an API route that the client calls after createInvitation.
+To deliver real email in production, set **`RESEND_API_KEY`** (and optionally **`EMAIL_FROM`** with a sender on a domain you have verified in Resend). See `.env.local.example`.
 
-3. **Option C – Log only (current):**  
-   The create-invitation action logs the link with `console.info("[Invite] Created invitation link for", email, ":", inviteLink)`. Use this in development; in production, replace with one of the options above.
+Legacy note: Supabase Auth’s built-in “invite user” is a different flow; ORAT uses custom tokens in `organization_invitations`, so outbound mail goes through Resend (or the console fallback above), not Supabase’s invite template alone.
 
 ## Environment
 

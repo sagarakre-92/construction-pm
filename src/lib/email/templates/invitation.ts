@@ -52,11 +52,11 @@ export function renderInvitationEmail(
 
   const subject = projectName
     ? `You're invited to ${projectName} on ${organizationName}`
-    : `You're invited to join ${organizationName} on ORAT`;
+    : `You're invited to join ${organizationName} on Alino`;
 
   const intro = projectName
-    ? `${inviterName} invited you to collaborate on the project "${projectName}" in ${organizationName} on ORAT.`
-    : `${inviterName} invited you to join ${organizationName} on ORAT — the Owner's Rep Action Tracker.`;
+    ? `${inviterName} invited you to collaborate on the project "${projectName}" in ${organizationName} on Alino.`
+    : `${inviterName} invited you to join ${organizationName} on Alino.`;
 
   const expiryHuman = formatExpiry(expiresAt);
   const expiresLine = expiryHuman

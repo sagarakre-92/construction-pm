@@ -165,16 +165,13 @@ export async function completeOnboarding(
   return { data: { id: orgId } };
 }
 
-// NOTE(orat-pjv): Agent D1 owns `src/lib/email/**` (sendInvitationEmail). Wire-up
-// will land when that module is merged. Until then, invite creation returns the
-// link to the UI which copies it to the clipboard.
-// import { sendInvitationEmail } from "@/lib/email";
-
 /** Create an organization invitation by email (org profile fields on accept come from the invite row defaults). Caller must be owner or admin. */
 export async function createInvitation(
   organizationId: string,
   email: string,
-): Promise<ActionResult<{ inviteLink: string; token: string }>> {
+): Promise<
+  ActionResult<{ inviteLink: string; token: string; emailDelivered: boolean }>
+> {
   const supabase = await createClient();
   const {
     data: { session },
@@ -248,7 +245,13 @@ export async function createInvitation(
     };
   }
 
-  return { data: { inviteLink, token: out.token } };
+  return {
+    data: {
+      inviteLink,
+      token: out.token,
+      emailDelivered: sendResult.delivered === true,
+    },
+  };
 }
 
 /**
@@ -260,7 +263,7 @@ export async function createInvitation(
  */
 export async function resendInvitationEmail(
   invitationId: string,
-): Promise<ActionResult<{ ok: true }>> {
+): Promise<ActionResult<{ ok: true; emailDelivered: boolean }>> {
   const supabase = await createClient();
   const {
     data: { session },
@@ -331,7 +334,9 @@ export async function resendInvitationEmail(
     .update({ expires_at: newExpiresAt })
     .eq("id", inv.id);
 
-  return { data: { ok: true } };
+  return {
+    data: { ok: true, emailDelivered: sendResult.delivered === true },
+  };
 }
 
 /**

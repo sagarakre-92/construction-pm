@@ -29,21 +29,39 @@ export function OrganizationInviteForm({ organizationId }: Props) {
         return;
       }
       const sentTo = email.trim();
-      toast.success(`Invitation emailed to ${sentTo}`);
+      const { inviteLink, emailDelivered } = result.data;
+      if (emailDelivered) {
+        toast.success(`Invitation emailed to ${sentTo}`);
+      } else {
+        toast.success(`Invitation created for ${sentTo}`);
+      }
       setEmail("");
       router.refresh();
-      const link = result.data.inviteLink;
       const fullLink =
-        link.startsWith("http")
-          ? link
-          : `${typeof window !== "undefined" ? window.location.origin : ""}${link}`;
+        inviteLink.startsWith("http")
+          ? inviteLink
+          : `${typeof window !== "undefined" ? window.location.origin : ""}${inviteLink}`;
       if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         try {
           await navigator.clipboard.writeText(fullLink);
-          toast.info("Invite link also copied to clipboard.");
+          if (emailDelivered) {
+            toast.info("Invite link also copied to clipboard.");
+          } else {
+            toast.info(
+              "Invite link copied—share it manually; inbox email needs RESEND_API_KEY on the server.",
+            );
+          }
         } catch {
-          // Clipboard access can be denied; the email send is what matters.
+          if (!emailDelivered) {
+            toast.warning(
+              "Could not copy the link. Configure RESEND_API_KEY for email delivery, or copy the link from server logs.",
+            );
+          }
         }
+      } else if (!emailDelivered) {
+        toast.info(
+          "Inbox email is not configured (RESEND_API_KEY). Share the invite link from server logs or your hosting dashboard.",
+        );
       }
     } finally {
       setLoading(false);

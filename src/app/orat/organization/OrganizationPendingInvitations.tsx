@@ -35,7 +35,14 @@ export function OrganizationPendingInvitations({ initialInvitations }: Props) {
         toast.error(res.error);
         return;
       }
-      toast.success(`Invitation re-sent to ${inv.email}`);
+      if (res.data.emailDelivered) {
+        toast.success(`Invitation emailed to ${inv.email}`);
+      } else {
+        toast.success(`Invitation updated for ${inv.email}`);
+        toast.info(
+          "Email was not sent from this environment (no Resend API key). Check server logs for the invite link or configure RESEND_API_KEY.",
+        );
+      }
     } finally {
       setBusyId(null);
     }
