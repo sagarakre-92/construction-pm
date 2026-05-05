@@ -30,7 +30,10 @@ interface TaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   task: Task | null;
+  /** Task’s project when editing; current dashboard project when creating from a project page (may be null on All Projects). */
   project: Project | null;
+  /** Non-archived projects the user can assign a new task to. */
+  availableProjects: Project[];
   internalUsers: InternalUser[];
   mode: "create" | "edit";
   onSave: (task: Task) => void;
@@ -57,6 +60,7 @@ export function TaskDialog({
   onOpenChange,
   task,
   project,
+  availableProjects,
   internalUsers,
   mode,
   onSave,
@@ -73,12 +77,22 @@ export function TaskDialog({
   const [status, setStatus] = useState<TaskStatus>("Not Started");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [meetingReference, setMeetingReference] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [projectError, setProjectError] = useState("");
 
-  const options = getAssigneeOptions(project, internalUsers);
+  const effectiveProject =
+    mode === "edit"
+      ? project
+      : selectedProjectId
+        ? availableProjects.find((p) => p.id === selectedProjectId) ?? null
+        : null;
+
+  const options = getAssigneeOptions(effectiveProject, internalUsers);
 
   // Sync form only when dialog opens or task/mode changes. Intentionally omit project/internalUsers so we don't re-run on parent re-render and reset the form while the user is typing.
   useEffect(() => {
     if (!open) return;
+    setProjectError("");
     if (task) {
       setTitle(task.title);
       setDescription(task.description ?? "");
@@ -91,7 +105,9 @@ export function TaskDialog({
       setMeetingReference(task.meetingReference ?? "");
     } else if (mode === "create") {
       const today = new Date().toISOString().slice(0, 10);
-      const assigneeOptions = getAssigneeOptions(project, internalUsers);
+      const initialPid = project?.id ?? "";
+      setSelectedProjectId(initialPid);
+      const assigneeOptions = getAssigneeOptions(project ?? null, internalUsers);
       const first = assigneeOptions[0];
       setTitle("");
       setDescription("");
@@ -104,7 +120,7 @@ export function TaskDialog({
       setMeetingReference("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync when open/task/mode change; including project/internalUsers would reset form on every keystroke
-  }, [open, task, mode]);
+  }, [open, task, mode, project?.id]);
 
   useEffect(() => {
     const opt = options.find((o) => o.id === assignedTo);
@@ -112,7 +128,14 @@ export function TaskDialog({
   }, [assignedTo, options]);
 
   const handleSave = () => {
-    if (!project) return;
+    if (mode === "create") {
+      if (!effectiveProject) {
+        setProjectError("Project is required");
+        return;
+      }
+    } else if (!project) {
+      return;
+    }
     const now = new Date().toISOString().slice(0, 10);
     if (mode === "edit" && task) {
       onSave({
@@ -132,7 +155,7 @@ export function TaskDialog({
           { date: now, action: "Task updated", user: "Current User" },
         ],
       });
-    } else if (mode === "create" && onCreate) {
+    } else if (mode === "create" && onCreate && effectiveProject) {
       onCreate({
         title: title.trim(),
         description: description.trim() || undefined,
@@ -145,8 +168,8 @@ export function TaskDialog({
         status,
         priority,
         meetingReference: meetingReference.trim() || undefined,
-        projectId: project.id,
-        projectName: project.name,
+        projectId: effectiveProject.id,
+        projectName: effectiveProject.name,
         history: [{ date: now, action: "Task created", user: "Current User" }],
       });
     }
@@ -160,7 +183,12 @@ export function TaskDialog({
     }
   };
 
-  const valid = title.trim().length > 0 && assignedTo && startDate && dueDate;
+  const valid =
+    title.trim().length > 0 &&
+    assignedTo &&
+    startDate &&
+    dueDate &&
+    (mode !== "create" || !!effectiveProject);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -169,6 +197,44 @@ export function TaskDialog({
           <DialogTitle>{mode === "create" ? "Create Task" : "Edit Task"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          {mode === "create" && (
+            <div className="space-y-2">
+              <Label htmlFor="task-project">Project</Label>
+              <Select
+                value={selectedProjectId === "" ? undefined : selectedProjectId}
+                onValueChange={(id) => {
+                  setSelectedProjectId(id);
+                  setProjectError("");
+                  const ep = availableProjects.find((p) => p.id === id) ?? null;
+                  const assigneeOptions = getAssigneeOptions(ep, internalUsers);
+                  const first = assigneeOptions[0];
+                  setAssignedTo(first?.id ?? "");
+                  setCompany(first?.company ?? "");
+                }}
+              >
+                <SelectTrigger
+                  id="task-project"
+                  aria-required
+                  aria-invalid={!!projectError}
+                  aria-describedby={projectError ? "task-project-error" : undefined}
+                >
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableProjects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {projectError ? (
+                <p id="task-project-error" className="text-sm text-red-600 dark:text-red-400" role="alert">
+                  {projectError}
+                </p>
+              ) : null}
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="task-title">Title (required)</Label>
             <Input

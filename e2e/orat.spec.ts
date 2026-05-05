@@ -76,14 +76,13 @@ test.describe("ORAT board flow", () => {
     await expect(projectDialog).toBeHidden({ timeout: 15_000 });
 
     // ORATPage auto-selects the newly created project; wait until the
-    // header heading swaps from "All Projects" to the project name (this
-    // also confirms the silent refetch finished and `currentProject` is
-    // populated, which is what gates the "Create Task" button).
+    // header heading swaps from "All Projects" to the project name (silent
+    // refetch finished).
     await expect(
       page.getByRole("heading", { name: projectName, level: 1 }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // --- Create Task -------------------------------------------------------
+    // --- Create Task (main app bar, left of Settings) ----------------------
     await page.getByRole("button", { name: /create task/i }).click();
     const taskDialog = page.getByRole("dialog", { name: /create task/i });
     await expect(taskDialog).toBeVisible({ timeout: 10_000 });

@@ -185,6 +185,18 @@ export default function ORATPage() {
     [projects, currentProjectId]
   );
 
+  const activeProjects = useMemo(
+    () => projects.filter((p) => !p.archived),
+    [projects]
+  );
+
+  const taskDialogProject = useMemo(() => {
+    if (taskDialogMode === "edit" && taskDialogTask?.projectId) {
+      return projects.find((p) => p.id === taskDialogTask.projectId) ?? null;
+    }
+    return currentProject;
+  }, [taskDialogMode, taskDialogTask, currentProject, projects]);
+
   const displayTasks = useMemo(() => {
     let list: Task[] = [];
     if (currentProjectId === "all-projects") {
@@ -470,13 +482,22 @@ export default function ORATPage() {
 
   const handleCreateTask = useCallback(
     (data: Omit<Task, "id" | "history"> & { history: Task["history"] }) => {
-      if (!currentProject) return;
+      const projectId = data.projectId;
+      if (!projectId) {
+        toast.error("Project is required");
+        return;
+      }
+      const targetProject = projects.find((p) => p.id === projectId);
+      if (!targetProject) {
+        toast.error("Project not found");
+        return;
+      }
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       const optimisticTask: Task = {
         ...data,
         id: tempId,
-        projectId: currentProject.id,
-        projectName: currentProject.name,
+        projectId: targetProject.id,
+        projectName: targetProject.name,
         sortOrder: 0,
         history: data.history ?? [],
       };
@@ -484,18 +505,16 @@ export default function ORATPage() {
       setTaskDialogOpen(false);
       setProjects((prev) =>
         prev.map((p) =>
-          p.id === currentProject.id
-            ? { ...p, tasks: [...p.tasks, optimisticTask] }
-            : p
+          p.id === projectId ? { ...p, tasks: [...p.tasks, optimisticTask] } : p
         )
       );
 
-      createTaskAction(currentProject.id, { ...data, history: data.history ?? [] }).then(
+      createTaskAction(projectId, { ...data, history: data.history ?? [] }).then(
         (res) => {
           if ("error" in res) {
             setProjects((prev) =>
               prev.map((p) =>
-                p.id === currentProject.id
+                p.id === projectId
                   ? { ...p, tasks: p.tasks.filter((t) => t.id !== tempId) }
                   : p
               )
@@ -506,7 +525,7 @@ export default function ORATPage() {
           const persisted = res.data;
           setProjects((prev) =>
             prev.map((p) =>
-              p.id === currentProject.id
+              p.id === projectId
                 ? {
                     ...p,
                     tasks: p.tasks.map((t) =>
@@ -523,7 +542,7 @@ export default function ORATPage() {
         (err) => {
           setProjects((prev) =>
             prev.map((p) =>
-              p.id === currentProject.id
+              p.id === projectId
                 ? { ...p, tasks: p.tasks.filter((t) => t.id !== tempId) }
                 : p
             )
@@ -532,7 +551,7 @@ export default function ORATPage() {
         }
       );
     },
-    [currentProject]
+    [projects]
   );
 
   const handleDeleteTask = useCallback(
@@ -652,42 +671,60 @@ export default function ORATPage() {
               )}
             </div>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="ghost" className="shrink-0" aria-label="Settings">
-                <Settings className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {!isAllProjects && currentProject && (
-                <>
-                  <DropdownMenuItem onClick={() => openEditProject(currentProject)}>
-                    Edit Project Details
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openArchiveConfirm(currentProject)} className="text-red-600">
-                    Archive Project
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
-              <DropdownMenuItem asChild>
-                <Link href="/orat/organization">Organization</Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  const supabase = createClient();
-                  supabase.auth.signOut().then(
-                    () => { window.location.href = "/"; },
-                    () => { window.location.href = "/"; }
-                  );
+          <div className="flex shrink-0 items-center gap-2">
+            {activeProjects.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs sm:text-sm"
+                aria-label="Create Task"
+                onClick={() => {
+                  setTaskDialogTask(null);
+                  setTaskDialogMode("create");
+                  setTaskDialogOpen(true);
                 }}
               >
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <Plus className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Create Task</span>
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" className="shrink-0" aria-label="Settings">
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {!isAllProjects && currentProject && (
+                  <>
+                    <DropdownMenuItem onClick={() => openEditProject(currentProject)}>
+                      Edit Project Details
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openArchiveConfirm(currentProject)} className="text-red-600">
+                      Archive Project
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem asChild>
+                  <Link href="/orat/organization">Organization</Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    const supabase = createClient();
+                    supabase.auth.signOut().then(
+                      () => { window.location.href = "/"; },
+                      () => { window.location.href = "/"; }
+                    );
+                  }}
+                >
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
@@ -704,20 +741,6 @@ export default function ORATPage() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <TaskFilterDropdown value={taskFilter} onChange={setTaskFilter} />
-              {!isAllProjects && currentProject && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setTaskDialogTask(null);
-                    setTaskDialogMode("create");
-                    setTaskDialogOpen(true);
-                  }}
-                  className="text-xs sm:text-sm"
-                >
-                  <Plus className="h-4 w-4 shrink-0" />
-                  <span className="hidden sm:inline">Create Task</span>
-                </Button>
-              )}
             </div>
             <Tabs value={view} onValueChange={(v) => setView(v as "board" | "list" | "timeline")}>
               <TabsList className="w-full grid grid-cols-3 sm:w-auto sm:inline-flex">
@@ -814,7 +837,8 @@ export default function ORATPage() {
         open={taskDialogOpen}
         onOpenChange={setTaskDialogOpen}
         task={taskDialogTask}
-        project={currentProject}
+        project={taskDialogProject}
+        availableProjects={activeProjects}
         internalUsers={profiles}
         mode={taskDialogMode}
         onSave={handleSaveTask}
